@@ -1,0 +1,33 @@
+services:
+  ai_content_audit.assessment_repository:
+    class: Drupal\ai_content_audit\Repository\AiContentAssessmentRepository
+    arguments:
+      - '@entity_type.manager'
+
+  ai_content_audit.field_extractor:
+    class: Drupal\ai_content_audit\Service\FieldExtractor
+    arguments:
+      - '@entity_type.manager'
+    tags:
+      - { name: ai_content_audit.content_extractor, priority: 0 }
+
+  ai_content_audit.extractor_manager:
+    class: Drupal\ai_content_audit\Extractor\ContentExtractorManager
+    calls:
+      - [addExtractor, ['@ai_content_audit.field_extractor']]
+
+  ai_content_audit.assessment_service:
+    class: Drupal\ai_content_audit\Service\AiAssessmentService
+    arguments:
+      - '@ai.provider'
+      - '@ai_content_audit.extractor_manager'
+      - '@logger.factory'
+      - '@config.factory'
+      - '@entity_type.manager'
+
+  ai_content_audit.ai_response_subscriber:
+    class: Drupal\ai_content_audit\EventSubscriber\AiResponseSubscriber
+    arguments:
+      - '@logger.factory'
+    tags:
+      - { name: event_subscriber }

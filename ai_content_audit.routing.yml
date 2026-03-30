@@ -1,0 +1,55 @@
+# Collection page — lists all AI Content Assessment entities.
+entity.ai_content_assessment.collection:
+  path: '/admin/content/ai-assessments'
+  defaults:
+    _entity_list: 'ai_content_assessment'
+    _title: 'AI Content Assessments'
+  requirements:
+    _permission: 'view ai content assessment+administer ai content audit'
+  options:
+    _admin_route: TRUE
+
+# Canonical view page for a single assessment.
+entity.ai_content_assessment.canonical:
+  path: '/admin/content/ai-assessments/{ai_content_assessment}'
+  defaults:
+    _entity_view: 'ai_content_assessment'
+    _title_callback: '\Drupal\Core\Entity\Controller\EntityController::title'
+  requirements:
+    _entity_access: 'ai_content_assessment.view'
+  options:
+    _admin_route: TRUE
+
+# Delete confirmation form.
+entity.ai_content_assessment.delete_form:
+  path: '/admin/content/ai-assessments/{ai_content_assessment}/delete'
+  defaults:
+    _entity_form: 'ai_content_assessment.delete'
+    _title: 'Delete AI Content Assessment'
+  requirements:
+    _entity_access: 'ai_content_assessment.delete'
+  options:
+    _admin_route: TRUE
+
+# Node assessment history tab — local task on node canonical.
+ai_content_audit.node.assessment_history:
+  path: '/node/{node}/ai-assessment'
+  defaults:
+    _controller: '\Drupal\ai_content_audit\Controller\AiAssessmentController::history'
+    _title: 'AI Assessment History'
+  requirements:
+    _permission: 'view ai content assessment+administer ai content audit'
+    node: \d+
+  options:
+    _admin_route: FALSE
+
+# Settings form.
+ai_content_audit.settings:
+  path: '/admin/config/ai/content-audit'
+  defaults:
+    _form: '\Drupal\ai_content_audit\Form\SettingsForm'
+    _title: 'AI Content Audit Settings'
+  requirements:
+    _permission: 'administer ai content audit'
+  options:
+    _admin_route: TRUE

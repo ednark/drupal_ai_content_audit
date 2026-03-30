@@ -1,0 +1,13 @@
+administer ai content audit:
+  title: 'Administer AI Content Audit'
+  description: 'Full control over settings and all assessment records.'
+  restrict access: true
+
+view ai content assessment:
+  title: 'View AI content assessments'
+  description: 'Read-only access to assessment results and history.'
+
+run ai content assessment:
+  title: 'Run AI content assessment'
+  description: 'Trigger a new AI assessment for a node.'
+  restrict access: true

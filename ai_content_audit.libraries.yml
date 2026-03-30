@@ -1,0 +1,5 @@
+assessment-panel:
+  version: 1.x
+  css:
+    component:
+      css/ai-assessment-panel.css: {}

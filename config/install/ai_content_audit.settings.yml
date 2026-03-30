@@ -1,0 +1,6 @@
+enable_on_save: false
+max_chars_per_request: 8000
+enable_history: true
+node_types: []
+max_assessments_per_node: 10
+render_mode: text

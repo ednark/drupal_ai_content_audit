@@ -1,0 +1,27 @@
+# Config schema for the AI Content Audit settings config object.
+# NOTE: No schema entry is needed for the content entity type itself.
+ai_content_audit.settings:
+  type: config_object
+  label: 'AI Content Audit settings'
+  mapping:
+    enable_on_save:
+      type: boolean
+      label: 'Assess on node save'
+    max_chars_per_request:
+      type: integer
+      label: 'Max characters per assessment request'
+    enable_history:
+      type: boolean
+      label: 'Enable assessment history'
+    node_types:
+      type: sequence
+      label: 'Node types to assess'
+      sequence:
+        type: string
+        label: 'Node type'
+    max_assessments_per_node:
+      type: integer
+      label: 'Maximum assessments to keep per node'
+    render_mode:
+      type: string
+      label: 'Content render mode'

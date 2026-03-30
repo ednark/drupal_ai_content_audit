@@ -1,0 +1,494 @@
+<?php
+
+/**
+ * @file
+ * AI Content Audit module hooks.
+ */
+
+use Drupal\ai_content_audit\Entity\AiContentAssessment;
+use Drupal\Core\Ajax\AjaxResponse;
+use Drupal\Core\Ajax\MessageCommand;
+use Drupal\Core\Ajax\ReplaceCommand;
+use Drupal\Core\Cache\Cache;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_theme().
+ */
+function ai_content_audit_theme(): array {
+  return [
+    'ai_assessment_panel' => [
+      'variables' => [
+        'score'        => NULL,
+        'suggestions'  => [],
+        'provider_id'  => NULL,
+        'model_id'     => NULL,
+        'created'      => NULL,
+      ],
+    ],
+  ];
+}
+
+/**
+ * Implements hook_form_BASE_FORM_ID_alter() for node_form.
+ *
+ * Adds the AI Assessment sidebar panel to existing node edit forms.
+ */
+function ai_content_audit_form_node_form_alter(
+  array &$form,
+  FormStateInterface $form_state,
+  string $form_id,
+): void {
+  /** @var \Drupal\node\NodeInterface $node */
+  $node = $form_state->getFormObject()->getEntity();
+
+  if (!$node instanceof NodeInterface || $node->isNew()) {
+    return;
+  }
+
+  $assessment = \Drupal::service('ai_content_audit.assessment_repository')->getLatestForNode((int) $node->id());
+  $score      = $assessment?->getScore();
+  $score_text = $score !== NULL ? $score . '/100' : t('Not yet assessed');
+
+  $form['ai_assessment_sidebar'] = [
+    '#type'       => 'details',
+    '#title'      => t('AI Assessment'),
+    '#group'      => 'advanced',
+    '#weight'     => 100,
+    '#open'       => FALSE,
+    '#tree'       => TRUE,
+    '#attributes' => ['id' => 'ai-assessment-sidebar'],
+    '#prefix'     => '<div id="ai-assessment-sidebar-wrapper">',
+    '#suffix'     => '</div>',
+  ];
+
+  $form['ai_assessment_sidebar']['score_display'] = [
+    '#markup' => '<p class="ai-score-current">' . t('Latest score: <strong>@score</strong>', ['@score' => $score_text]) . '</p>',
+  ];
+
+  if ($assessment) {
+    $result      = $assessment->getParsedResult();
+    $suggestions = $result['suggestions'] ?? [];
+    if (!empty($suggestions)) {
+      $items = [];
+      foreach (array_slice($suggestions, 0, 3) as $s) {
+        $items[] = '<li><strong>' . htmlspecialchars($s['area'] ?? '') . '</strong>: ' . htmlspecialchars($s['suggestion'] ?? '') . '</li>';
+      }
+      $form['ai_assessment_sidebar']['suggestions_preview'] = [
+        '#markup' => '<ul class="ai-suggestions-preview">' . implode('', $items) . '</ul>',
+      ];
+    }
+  }
+
+  $form['ai_assessment_sidebar']['assess_now'] = [
+    '#type'                    => 'submit',
+    '#value'                   => t('Assess Now'),
+    '#access'                  => \Drupal::currentUser()->hasPermission('run ai content assessment'),
+    '#limit_validation_errors' => [],
+    '#submit'                  => ['ai_content_audit_assess_now_submit'],
+    '#ajax'                    => [
+      'callback' => 'ai_content_audit_assess_now_ajax',
+      'wrapper'  => 'ai-assessment-sidebar-wrapper',
+      'effect'   => 'fade',
+      'progress' => [
+        'type'    => 'throbber',
+        'message' => t('Running AI assessment…'),
+      ],
+    ],
+    '#attached' => ['library' => ['ai_content_audit/assessment-panel']],
+  ];
+
+  // Store the nid in form_state storage (server-side) so the submit handler
+  // can retrieve it reliably without depending on a POST-submitted hidden
+  // field, which breaks when #group re-parents the element during rendering.
+  $form_state->set('ai_assessment_nid', (int) $node->id());
+}
+
+/**
+ * Submit handler: runs the assessment and saves the result entity.
+ *
+ * Fires before the #ajax callback.
+ */
+function ai_content_audit_assess_now_submit(
+  array &$form,
+  FormStateInterface $form_state,
+): void {
+  if (!\Drupal::currentUser()->hasPermission('run ai content assessment')) {
+    throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException();
+  }
+
+  // M-10: Server-side rate limiting via Drupal's flood service.
+  // Limit each user to 3 assessment requests per node per 60 seconds.
+  $flood            = \Drupal::flood();
+  $flood_nid        = (int) $form_state->get('ai_assessment_nid');
+  $flood_event      = 'ai_content_audit.assess_now';
+  $flood_threshold  = 3;
+  $flood_window     = 60;
+  $flood_identifier = \Drupal::currentUser()->id() . ':' . $flood_nid;
+
+  if (!$flood->isAllowed($flood_event, $flood_threshold, $flood_window, $flood_identifier)) {
+    $response = new AjaxResponse();
+    $response->addCommand(new MessageCommand(
+      (string) t('You are submitting too many assessment requests. Please wait a moment before trying again.'),
+      NULL,
+      ['type' => 'warning'],
+    ));
+    $form_state->setResponse($response);
+    return;
+  }
+  $flood->register($flood_event, $flood_window, $flood_identifier);
+
+  // Read from server-side form_state storage (set in the form alter) rather
+  // than from a POST-submitted hidden field.  The #group => 'advanced' on the
+  // parent details element causes Drupal to re-parent the element during
+  // rendering, which breaks the #tree value path and makes getValue() return
+  // NULL (cast to 0).
+  $nid = (int) $form_state->get('ai_assessment_nid');
+
+  $node = \Drupal::entityTypeManager()->getStorage('node')->load($nid);
+  if (!$node instanceof NodeInterface) {
+    \Drupal::logger('ai_content_audit')->error('assess_now_submit: node @nid not found.', ['@nid' => $nid]);
+    $form_state->set('ai_assessment_error', t('Node not found (nid=@nid).', ['@nid' => $nid]));
+    return;
+  }
+  try {
+    /** @var \Drupal\ai_content_audit\Service\AiAssessmentService $service */
+    $service = \Drupal::service('ai_content_audit.assessment_service');
+    $result  = $service->assessNode($node);
+    if (!$result['success']) {
+      $form_state->set('ai_assessment_error', $result['error']);
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('ai_content_audit')->error('assess_now_submit exception: @msg', ['@msg' => $e->getMessage()]);
+    $form_state->set('ai_assessment_error', t('An error occurred while requesting the assessment. Please try again later.'));
+  }
+}
+
+/**
+ * AJAX callback: returns the rebuilt sidebar after assessment.
+ */
+function ai_content_audit_assess_now_ajax(
+  array &$form,
+  FormStateInterface $form_state,
+): AjaxResponse {
+  $response = new AjaxResponse();
+
+  if ($error = $form_state->get('ai_assessment_error')) {
+    $response->addCommand(new MessageCommand(
+      (string) t('Assessment failed: @error', ['@error' => $error]),
+      NULL,
+      ['type' => 'error'],
+    ));
+    return $response;
+  }
+
+  $response->addCommand(new ReplaceCommand(
+    '#ai-assessment-sidebar-wrapper',
+    $form['ai_assessment_sidebar'],
+  ));
+  $response->addCommand(new MessageCommand(
+    (string) t('Assessment complete.'),
+    NULL,
+    ['type' => 'status'],
+  ));
+
+  return $response;
+}
+
+/**
+ * Implements hook_entity_insert().
+ *
+ * Invalidates per-node assessment list cache tags when a new assessment is saved.
+ */
+function ai_content_audit_entity_insert(EntityInterface $entity): void {
+  if ($entity instanceof AiContentAssessment) {
+    $nid = (int) $entity->get('target_node')->target_id;
+    if ($nid) {
+      Cache::invalidateTags(['ai_content_assessment_list:node:' . $nid]);
+    }
+  }
+}
+
+/**
+ * Implements hook_entity_update().
+ *
+ * Invalidates per-node assessment list cache tags when an assessment is updated.
+ */
+function ai_content_audit_entity_update(EntityInterface $entity): void {
+  if ($entity instanceof AiContentAssessment) {
+    $nid = (int) $entity->get('target_node')->target_id;
+    if ($nid) {
+      Cache::invalidateTags(['ai_content_assessment_list:node:' . $nid]);
+    }
+  }
+}
+
+/**
+ * Implements hook_node_insert().
+ *
+ * Enqueues an AI assessment when a node is created, if on-save is enabled.
+ */
+function ai_content_audit_node_insert(\Drupal\node\NodeInterface $node): void {
+  _ai_content_audit_maybe_enqueue($node);
+}
+
+/**
+ * Implements hook_node_update().
+ *
+ * Enqueues an AI assessment when a node is updated, if on-save is enabled.
+ */
+function ai_content_audit_node_update(\Drupal\node\NodeInterface $node): void {
+  _ai_content_audit_maybe_enqueue($node);
+}
+
+/**
+ * Helper: enqueues a node for AI assessment if on-save triggering is enabled.
+ */
+function _ai_content_audit_maybe_enqueue(\Drupal\node\NodeInterface $node): void {
+  $config = \Drupal::config('ai_content_audit.settings');
+  if (!$config->get('enable_on_save')) {
+    return;
+  }
+
+  $allowed_types = $config->get('node_types') ?? [];
+  if (!empty($allowed_types) && !in_array($node->bundle(), $allowed_types, TRUE)) {
+    return;
+  }
+
+  // M-3: Deduplicate — skip enqueueing if a queue item for this node already
+  // exists, preventing duplicate AI API calls on rapid successive saves.
+  $db = \Drupal::database();
+  $existing = $db->select('queue', 'q')
+    ->fields('q', ['item_id'])
+    ->condition('q.name', 'ai_content_audit_assessment')
+    ->condition('q.data', '%' . $db->escapeLike('"nid";i:' . $node->id()) . '%', 'LIKE')
+    ->execute()
+    ->fetchField();
+
+  if (!$existing) {
+    \Drupal::queue('ai_content_audit_assessment')->createItem([
+      'nid' => (int) $node->id(),
+    ]);
+  }
+}
+
+/**
+ * Implements hook_node_delete().
+ *
+ * Deletes all AI assessment records when a node is deleted.
+ */
+function ai_content_audit_node_delete(\Drupal\node\NodeInterface $node): void {
+  $storage = \Drupal::entityTypeManager()->getStorage('ai_content_assessment');
+  $ids = $storage->getQuery()
+    ->condition('target_node', $node->id())
+    ->accessCheck(FALSE)
+    ->execute();
+
+  if ($ids) {
+    $assessments = $storage->loadMultiple($ids);
+    $storage->delete($assessments);
+    \Drupal::logger('ai_content_audit')->info(
+      'Deleted @count AI assessment(s) for deleted node @nid.',
+      ['@count' => count($ids), '@nid' => $node->id()]
+    );
+  }
+}
+
+/**
+ * Implements hook_ai_operation_types_alter().
+ *
+ * Registers the 'content_audit' operation type so it appears as a dedicated
+ * row on the AI settings page at /admin/config/ai/settings.
+ */
+function ai_content_audit_ai_operation_types_alter(array &$operation_types): void {
+  $operation_types['content_audit'] = [
+    'id'          => 'content_audit',
+    'label'       => 'Content Audit',
+    'actual_type' => 'chat',
+    'filter'      => [],
+  ];
+}
+
+/**
+ * Implements hook_views_data().
+ *
+ * Exposes the ai_content_assessment base table and its fields to Views so
+ * site builders can create dashboards and custom reports from assessment data.
+ *
+ * Column names follow Drupal's DefaultTableMapping convention for a
+ * ContentEntityBase with no revision or translation support:
+ *  - Entity key fields (id, uuid, label) use the bare field name.
+ *  - entity_reference fields use {fieldname}_target_id.
+ *  - integer/string/timestamp fields use {fieldname}_value.
+ */
+function ai_content_audit_views_data(): array {
+  $data = [];
+
+  // ── Table metadata ──────────────────────────────────────────────────────────
+  $data['ai_content_assessment']['table']['group'] = t('AI Content Assessment');
+  $data['ai_content_assessment']['table']['base'] = [
+    'field'  => 'id',
+    'title'  => t('AI Content Assessment'),
+    'help'   => t('AI-generated content quality assessments.'),
+    'weight' => -10,
+  ];
+
+  // ── id (entity key, serial integer) ─────────────────────────────────────────
+  $data['ai_content_assessment']['id'] = [
+    'title'    => t('Assessment ID'),
+    'help'     => t('The unique ID of the assessment.'),
+    'field'    => ['id' => 'numeric'],
+    'filter'   => ['id' => 'numeric'],
+    'sort'     => ['id' => 'standard'],
+    'argument' => ['id' => 'numeric'],
+  ];
+
+  // ── label (entity key, string) ───────────────────────────────────────────────
+  $data['ai_content_assessment']['label'] = [
+    'title'  => t('Assessment label'),
+    'help'   => t('Auto-generated human-readable label for the assessment.'),
+    'field'  => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort'   => ['id' => 'standard'],
+  ];
+
+  // ── target_node_target_id (entity_reference → node) ─────────────────────────
+  $data['ai_content_assessment']['target_node_target_id'] = [
+    'title'        => t('Assessed node ID'),
+    'help'         => t('The ID of the node that was assessed.'),
+    'field'        => ['id' => 'numeric'],
+    'filter'       => ['id' => 'numeric'],
+    'sort'         => ['id' => 'standard'],
+    'argument'     => ['id' => 'numeric'],
+    'relationship' => [
+      'base'       => 'node_field_data',
+      'base field' => 'nid',
+      'id'         => 'standard',
+      'label'      => t('Assessed node'),
+    ],
+  ];
+
+  // ── score_value (integer 0–100) ──────────────────────────────────────────────
+  $data['ai_content_assessment']['score_value'] = [
+    'title'    => t('AI Readiness Score'),
+    'help'     => t('Overall AI readiness score, 0 (poor) to 100 (excellent).'),
+    'field'    => ['id' => 'numeric'],
+    'filter'   => ['id' => 'numeric'],
+    'sort'     => ['id' => 'standard'],
+    'argument' => ['id' => 'numeric'],
+  ];
+
+  // ── result_json_value (string_long — stores structured JSON summary) ─────────
+  $data['ai_content_assessment']['result_json_value'] = [
+    'title'  => t('Assessment JSON'),
+    'help'   => t('Structured JSON result from the AI assessment, including suggestions.'),
+    'field'  => ['id' => 'standard'],
+    'filter' => ['id' => 'string'],
+    'sort'   => ['id' => 'standard'],
+  ];
+
+  // ── created_value (created timestamp) ────────────────────────────────────────
+  $data['ai_content_assessment']['created_value'] = [
+    'title'    => t('Created'),
+    'help'     => t('Timestamp when the assessment was created.'),
+    'field'    => ['id' => 'date'],
+    'filter'   => ['id' => 'date'],
+    'sort'     => ['id' => 'date'],
+    'argument' => ['id' => 'date'],
+  ];
+
+  // ── run_by_target_id (entity_reference → user) ───────────────────────────────
+  $data['ai_content_assessment']['run_by_target_id'] = [
+    'title'        => t('Run by (user ID)'),
+    'help'         => t('The user who triggered the assessment (NULL for queue/cron runs).'),
+    'field'        => ['id' => 'numeric'],
+    'filter'       => ['id' => 'numeric'],
+    'sort'         => ['id' => 'standard'],
+    'argument'     => ['id' => 'numeric'],
+    'relationship' => [
+      'base'       => 'users_field_data',
+      'base field' => 'uid',
+      'id'         => 'standard',
+      'label'      => t('Run by user'),
+    ],
+  ];
+
+  // ── provider_id_value (string — AI provider machine name) ────────────────────
+  $data['ai_content_assessment']['provider_id_value'] = [
+    'title'    => t('AI provider'),
+    'help'     => t('Machine name of the AI provider used (e.g. "openai").'),
+    'field'    => ['id' => 'standard'],
+    'filter'   => ['id' => 'string'],
+    'sort'     => ['id' => 'standard'],
+    'argument' => ['id' => 'string'],
+  ];
+
+  // ── model_id_value (string — AI model identifier) ────────────────────────────
+  $data['ai_content_assessment']['model_id_value'] = [
+    'title'    => t('AI model'),
+    'help'     => t('Model identifier used for the assessment (e.g. "gpt-4o").'),
+    'field'    => ['id' => 'standard'],
+    'filter'   => ['id' => 'string'],
+    'sort'     => ['id' => 'standard'],
+    'argument' => ['id' => 'string'],
+  ];
+
+  return $data;
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Purges excess ai_content_assessment records per node when
+ * max_assessments_per_node is set to a positive integer.
+ * The newest $max assessments per node are retained; older ones are deleted.
+ */
+function ai_content_audit_cron(): void {
+  $max = (int) \Drupal::config('ai_content_audit.settings')
+    ->get('max_assessments_per_node');
+
+  // 0 (or unset) means keep all records — nothing to purge.
+  if ($max <= 0) {
+    return;
+  }
+
+  // Find all node IDs that have more assessments than the retention limit.
+  // target_node_target_id is the auto-generated column for the entity_reference
+  // base field 'target_node' (column key = target_id).
+  $database = \Drupal::database();
+  $node_ids = $database->select('ai_content_assessment', 'a')
+    ->fields('a', ['target_node_target_id'])
+    ->groupBy('a.target_node_target_id')
+    ->having('COUNT(a.id) > :max', [':max' => $max])
+    ->execute()
+    ->fetchCol();
+
+  if (empty($node_ids)) {
+    return;
+  }
+
+  $storage = \Drupal::entityTypeManager()->getStorage('ai_content_assessment');
+
+  foreach ($node_ids as $nid) {
+    // Load IDs for this node, newest first via the entity query API.
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('target_node', $nid)
+      ->sort('created', 'DESC')
+      ->execute();
+
+    // Everything beyond the retention limit should be deleted.
+    $to_delete = array_slice(array_values($ids), $max);
+    if (!empty($to_delete)) {
+      $entities = $storage->loadMultiple($to_delete);
+      $storage->delete($entities);
+      \Drupal::logger('ai_content_audit')->info(
+        'Pruned @count old assessment(s) for node @nid (retention limit: @max).',
+        ['@count' => count($to_delete), '@nid' => $nid, '@max' => $max],
+      );
+    }
+  }
+}

@@ -1,0 +1,10 @@
+services:
+  ai_content_audit.commands:
+    class: Drupal\ai_content_audit\Commands\AiContentAuditCommands
+    arguments:
+      - '@ai_content_audit.assessment_service'
+      - '@entity_type.manager'
+      - '@queue'
+      - '@config.factory'
+    tags:
+      - { name: drush.command }

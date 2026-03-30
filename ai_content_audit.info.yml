@@ -1,0 +1,9 @@
+name: 'AI Content Auditor'
+type: module
+description: 'Assesses node content quality and AI-readiness using the Drupal AI module.'
+package: 'AI'
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:node
+  - ai:ai
+configure: ai_content_audit.settings
