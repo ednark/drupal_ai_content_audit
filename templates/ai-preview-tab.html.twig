@@ -1,0 +1,75 @@
+{#
+/**
+ * @file
+ * AI Preview tab content for the AIRO panel.
+ *
+ * Variables:
+ * - providers: Array of available AI providers [{id, label}].
+ * - suggested_prompts: Array of suggested prompt strings.
+ * - node_id: The node ID.
+ * - active_provider: The currently active provider ID (first one by default).
+ * - query_url: URL for submitting preview queries.
+ */
+#}
+<div class="airo-preview" data-node-id="{{ node_id }}">
+
+  {# Query Input #}
+  <div class="airo-preview__query">
+    <label class="airo-preview__query-label" for="airo-preview-input">
+      {{ 'Ask a question about this content'|t }}
+    </label>
+    <div class="airo-preview__query-row">
+      <input type="text" id="airo-preview-input" class="airo-preview__input"
+        placeholder="{{ 'e.g., What are the key points of this content?'|t }}"
+        data-query-url="{{ query_url }}">
+      <button type="button" class="airo-preview__submit button button--primary button--small">
+        {{ 'Ask'|t }}
+      </button>
+    </div>
+  </div>
+
+  {# Suggested Prompts #}
+  {% if suggested_prompts is not empty %}
+  <div class="airo-preview__suggestions">
+    <span class="airo-preview__suggestions-label">{{ 'Suggested:'|t }}</span>
+    <div class="airo-preview__suggestions-list">
+      {% for prompt in suggested_prompts %}
+        <button type="button" class="airo-preview__suggestion-btn"
+          data-prompt="{{ prompt|e('html_attr') }}">
+          {{ prompt }}
+        </button>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Provider Tabs — dynamically generated from available providers #}
+  {% if providers|length > 1 %}
+  <div class="airo-preview__providers" role="tablist">
+    {% for provider in providers %}
+      <button type="button"
+        class="airo-preview__provider-tab{% if provider.id == active_provider %} airo-preview__provider-tab--active{% endif %}"
+        data-provider-id="{{ provider.id }}"
+        role="tab"
+        aria-selected="{{ provider.id == active_provider ? 'true' : 'false' }}">
+        {{ provider.label }}
+      </button>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# Response Area #}
+  <div class="airo-preview__response" id="airo-preview-response" role="tabpanel">
+    <div class="airo-preview__empty">
+      <div class="airo-preview__empty-icon">
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+        </svg>
+      </div>
+      <p class="airo-preview__empty-text">
+        {{ 'Ask a question to see how AI systems would respond based on this content.'|t }}
+      </p>
+    </div>
+  </div>
+
+</div>

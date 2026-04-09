@@ -159,6 +159,18 @@ final class SettingsForm extends ConfigFormBase {
       '#min'           => 0,
     ];
 
+    // ── Content extraction mode ──────────────────────────────────────────────
+    $form['render_mode'] = [
+      '#type'          => 'select',
+      '#title'         => $this->t('Content extraction mode'),
+      '#options'       => [
+        'text' => $this->t('Plain text (default)'),
+        'html' => $this->t('Rendered HTML'),
+      ],
+      '#default_value' => $config->get('render_mode') ?? 'text',
+      '#description'   => $this->t('How node content is extracted for AI analysis.'),
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -175,6 +187,7 @@ final class SettingsForm extends ConfigFormBase {
       ->set('max_chars_per_request', (int) $form_state->getValue('max_chars_per_request'))
       ->set('enable_history', (bool) $form_state->getValue('enable_history'))
       ->set('max_assessments_per_node', (int) $form_state->getValue('max_assessments_per_node'))
+      ->set('render_mode', $form_state->getValue('render_mode'))
       ->save();
 
     parent::submitForm($form, $form_state);

@@ -28,6 +28,79 @@ function ai_content_audit_theme(): array {
         'created'      => NULL,
       ],
     ],
+    'ai_inline_score_widget' => [
+      'variables' => [
+        'score'              => NULL,
+        'is_analyzing'       => FALSE,
+        'has_assessment'     => FALSE,
+        'high_priority_count' => 0,
+        'node_id'            => NULL,
+      ],
+      'template' => 'ai-inline-score-widget',
+    ],
+    'ai_airo_panel' => [
+      'variables' => [
+        'node_id'    => NULL,
+        'score'      => NULL,
+        'node_title' => NULL,
+        'is_analyzing' => FALSE,
+        'active_tab' => 'score-tab',
+        'tab_content' => '',
+      ],
+      'template' => 'ai-airo-panel',
+    ],
+    'ai_score_tab' => [
+      'variables' => [
+        'score'                  => NULL,
+        'qualitative_label'      => NULL,
+        'score_color'            => NULL,
+        'score_color_hex'        => NULL,
+        'trend_delta'            => NULL,
+        'donut_radius'           => 50,
+        'donut_circumference'    => 0,
+        'donut_offset'           => 0,
+        'sub_scores'             => [],
+        'checkpoints'            => [],
+        'checkpoints_by_category' => [],
+        'history'                => [],
+        'node_id'                => NULL,
+        'assess_url'             => NULL,
+      ],
+      'template' => 'ai-score-tab',
+    ],
+    'ai_action_items_tab' => [
+      'variables' => [
+        'high_items'          => [],
+        'medium_items'        => [],
+        'low_items'           => [],
+        'action_items_status' => [],
+        'total_count'         => 0,
+        'completed_count'     => 0,
+        'high_count'          => 0,
+        'node_id'             => NULL,
+        'assess_url'          => NULL,
+      ],
+      'template' => 'ai-action-items-tab',
+    ],
+    'ai_technical_audit_tab' => [
+      'variables' => [
+        'checks'      => [],
+        'pass_count'  => 0,
+        'total_count' => 0,
+        'node_id'     => NULL,
+      ],
+      'template' => 'ai-technical-audit-tab',
+    ],
+    'ai_preview_tab' => [
+      'variables' => [
+        'providers'        => [],
+        'suggested_prompts' => [],
+        'active_provider'  => NULL,
+        'node_id'          => NULL,
+        'query_url'        => NULL,
+      ],
+      'template' => 'ai-preview-tab',
+    ],
   ];
 }
 
@@ -48,62 +121,47 @@ function ai_content_audit_form_node_form_alter(
     return;
   }
 
-  $assessment = \Drupal::service('ai_content_audit.assessment_repository')->getLatestForNode((int) $node->id());
+  $node_id    = (int) $node->id();
+  $assessment = \Drupal::service('ai_content_audit.assessment_repository')->getLatestForNode($node_id);
   $score      = $assessment?->getScore();
-  $score_text = $score !== NULL ? $score . '/100' : t('Not yet assessed');
+  $has_assessment = $assessment !== NULL;
 
-  $form['ai_assessment_sidebar'] = [
-    '#type'       => 'details',
-    '#title'      => t('AI Assessment'),
-    '#group'      => 'advanced',
-    '#weight'     => 100,
-    '#open'       => FALSE,
-    '#tree'       => TRUE,
-    '#attributes' => ['id' => 'ai-assessment-sidebar'],
-    '#prefix'     => '<div id="ai-assessment-sidebar-wrapper">',
-    '#suffix'     => '</div>',
-  ];
-
-  $form['ai_assessment_sidebar']['score_display'] = [
-    '#markup' => '<p class="ai-score-current">' . t('Latest score: <strong>@score</strong>', ['@score' => $score_text]) . '</p>',
-  ];
-
-  if ($assessment) {
-    $result      = $assessment->getParsedResult();
-    $suggestions = $result['suggestions'] ?? [];
-    if (!empty($suggestions)) {
-      $items = [];
-      foreach (array_slice($suggestions, 0, 3) as $s) {
-        $items[] = '<li><strong>' . htmlspecialchars($s['area'] ?? '') . '</strong>: ' . htmlspecialchars($s['suggestion'] ?? '') . '</li>';
+  // Count high-priority action items from the Phase 1 action_items field.
+  $high_priority_count = 0;
+  if ($assessment && !$assessment->get('action_items')->isEmpty()) {
+    $raw = $assessment->get('action_items')->value;
+    if ($raw) {
+      $items = json_decode($raw, TRUE) ?? [];
+      foreach ($items as $item) {
+        if (($item['priority'] ?? '') === 'high') {
+          $high_priority_count++;
+        }
       }
-      $form['ai_assessment_sidebar']['suggestions_preview'] = [
-        '#markup' => '<ul class="ai-suggestions-preview">' . implode('', $items) . '</ul>',
-      ];
     }
   }
 
-  $form['ai_assessment_sidebar']['assess_now'] = [
-    '#type'                    => 'submit',
-    '#value'                   => t('Assess Now'),
-    '#access'                  => \Drupal::currentUser()->hasPermission('run ai content assessment'),
-    '#limit_validation_errors' => [],
-    '#submit'                  => ['ai_content_audit_assess_now_submit'],
-    '#ajax'                    => [
-      'callback' => 'ai_content_audit_assess_now_ajax',
-      'wrapper'  => 'ai-assessment-sidebar-wrapper',
-      'effect'   => 'fade',
-      'progress' => [
-        'type'    => 'throbber',
-        'message' => t('Running AI assessment…'),
+  $form['ai_inline_score_widget'] = [
+    '#type'       => 'container',
+    '#weight'     => 10,
+    '#attributes' => ['id' => 'ai-inline-score-widget-wrapper'],
+    'widget'      => [
+      '#theme'               => 'ai_inline_score_widget',
+      '#score'               => $score,
+      '#is_analyzing'        => FALSE,
+      '#has_assessment'      => $has_assessment,
+      '#high_priority_count' => $high_priority_count,
+      '#node_id'             => $node_id,
+    ],
+    '#attached' => [
+      'library' => [
+        'ai_content_audit/inline-widget',
+        'core/drupal.dialog.ajax',
       ],
     ],
-    '#attached' => ['library' => ['ai_content_audit/assessment-panel']],
   ];
 
-  // Store the nid in form_state storage (server-side) so the submit handler
-  // can retrieve it reliably without depending on a POST-submitted hidden
-  // field, which breaks when #group re-parents the element during rendering.
-  $form_state->set('ai_assessment_nid', (int) $node->id());
+  // Keep form_state nid for legacy submit handlers.
+  $form_state->set('ai_assessment_nid', $node_id);
 }
 
 /**
@@ -196,6 +254,122 @@ function ai_content_audit_assess_now_ajax(
   ));
 
   return $response;
+}
+
+/**
+ * Preprocesses variables for the ai_inline_score_widget template.
+ *
+ * Calculates SVG donut values and derives color/label from the score.
+ */
+function template_preprocess_ai_inline_score_widget(array &$variables): void {
+  $score = (int) ($variables['score'] ?? 0);
+
+  // Score color thresholds.
+  $variables['score_color'] = match(TRUE) {
+    $score < 50 => 'danger',
+    $score < 75 => 'warning',
+    default     => 'good',
+  };
+
+  // Status label.
+  $variables['status_label'] = match(TRUE) {
+    $score < 50 => t('Needs Work'),
+    $score < 75 => t('Improving'),
+    default     => t('AI Ready'),
+  };
+
+  // SVG donut calculations (small widget uses radius 28).
+  $radius        = 28;
+  $circumference = 2 * M_PI * $radius;
+  $variables['donut_radius']        = $radius;
+  $variables['donut_circumference'] = round($circumference, 4);
+  $variables['donut_offset']        = round($circumference - ($score / 100) * $circumference, 4);
+
+  // Generate URLs for AJAX actions.
+  $node_id = $variables['node_id'];
+  if ($node_id) {
+    $variables['assess_url'] = \Drupal\Core\Url::fromRoute(
+      'ai_content_audit.panel.assess',
+      ['node' => $node_id]
+    )->toString();
+
+    $link = [
+      '#type'       => 'link',
+      '#title'      => t('View Full Analysis'),
+      '#url'        => \Drupal\Core\Url::fromRoute(
+        'ai_content_audit.panel.open',
+        ['node' => $node_id]
+      ),
+      '#attributes' => [
+        'class'                => ['use-ajax', 'airo-widget__view-analysis', 'button', 'button--small'],
+        'data-dialog-type'     => 'dialog',
+        'data-dialog-renderer' => 'off_canvas',
+        'data-dialog-options'  => \Drupal\Component\Serialization\Json::encode([
+          'width'   => 480,
+          'classes' => [
+            'ui-dialog' => 'airo-panel-dialog',
+          ],
+        ]),
+      ],
+    ];
+    $variables['view_analysis_link'] = \Drupal::service('renderer')->render($link);
+  }
+  else {
+    $variables['assess_url']         = '';
+    $variables['view_analysis_link'] = '';
+  }
+}
+
+/**
+ * Prepares variables for the AI Score tab template.
+ */
+function template_preprocess_ai_score_tab(array &$variables): void {
+  $score = (int) ($variables['score'] ?? 0);
+
+  // Score color thresholds.
+  $variables['score_color'] = match(TRUE) {
+    $score < 50 => 'danger',
+    $score < 75 => 'warning',
+    default     => 'good',
+  };
+
+  $variables['score_color_hex'] = match(TRUE) {
+    $score < 50 => '#ef4444',
+    $score < 75 => '#f59e0b',
+    default     => '#10b981',
+  };
+
+  // Qualitative label.
+  $variables['qualitative_label'] = match(TRUE) {
+    $score < 50 => t('Needs Work'),
+    $score < 75 => t('Improving'),
+    default     => t('AI Ready'),
+  };
+
+  // Large donut calculations (radius = 50, viewBox = 128, cx/cy = 64).
+  $radius = 50;
+  $circumference = 2 * M_PI * $radius;
+  $variables['donut_radius']        = $radius;
+  $variables['donut_circumference'] = round($circumference, 4);
+  $variables['donut_offset']        = round($circumference - ($score / 100) * $circumference, 4);
+
+  // Ensure sub-scores have percentages.
+  foreach ($variables['sub_scores'] as &$sub) {
+    if (!isset($sub['percentage'])) {
+      $sub['percentage'] = $sub['max_score'] > 0
+        ? round(($sub['score'] / $sub['max_score']) * 100)
+        : 0;
+    }
+  }
+  unset($sub);
+
+  // Ensure history entries have bar heights.
+  foreach ($variables['history'] as &$entry) {
+    if (!isset($entry['bar_height'])) {
+      $entry['bar_height'] = round(($entry['score'] / 100) * 100);
+    }
+  }
+  unset($entry);
 }
 
 /**

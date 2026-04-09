@@ -1,0 +1,33 @@
+:root {
+  /* AIRO Brand */
+  --airo-primary: #0678BE;
+  --airo-primary-dark: #0568A3;
+  --airo-success: #28a745;
+  --airo-success-dark: #218838;
+
+  /* Score Colors */
+  --airo-score-good: #10b981;
+  --airo-score-warning: #f59e0b;
+  --airo-score-danger: #ef4444;
+
+  /* Neutral */
+  --airo-gray-50: #f8f9fa;
+  --airo-gray-100: #f3f3f5;
+  --airo-gray-200: #e5e7eb;
+  --airo-gray-300: #d1d5db;
+  --airo-gray-400: #9ca3af;
+  --airo-gray-500: #6b7280;
+  --airo-gray-600: #717182;
+  --airo-gray-900: #030213;
+
+  /* Layout */
+  --airo-panel-width: 480px;
+  --airo-radius: 0.625rem;
+  --airo-radius-sm: calc(var(--airo-radius) - 4px);
+  --airo-radius-lg: var(--airo-radius);
+
+  /* Shadows */
+  --airo-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --airo-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --airo-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}

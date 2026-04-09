@@ -1,0 +1,224 @@
+/* Action Items Tab Styles */
+
+.airo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Summary bar */
+.airo-actions__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--airo-gray-50);
+  border-radius: var(--airo-radius);
+  border: 1px solid var(--airo-gray-200);
+}
+
+.airo-actions__counts {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--airo-gray-600);
+}
+
+.airo-actions__count-high {
+  color: var(--airo-score-danger);
+  font-weight: 600;
+}
+
+.airo-actions__count-completed {
+  color: var(--airo-score-good);
+  font-weight: 500;
+}
+
+.airo-actions__count-separator {
+  color: var(--airo-gray-300);
+}
+
+/* Priority groups */
+.airo-actions__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.airo-actions__group-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--airo-gray-900);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.airo-actions__group-count {
+  font-weight: 400;
+  color: var(--airo-gray-400);
+}
+
+.airo-actions__priority-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.airo-actions__priority-dot--high { background: var(--airo-score-danger); }
+.airo-actions__priority-dot--medium { background: var(--airo-score-warning); }
+.airo-actions__priority-dot--low { background: #3b82f6; }
+
+/* Individual action item card */
+.airo-actions__item {
+  border: 1px solid var(--airo-gray-200);
+  border-radius: var(--airo-radius-sm);
+  padding: 0.75rem;
+  background: #fff;
+  transition: opacity 0.2s, border-color 0.2s;
+}
+
+.airo-actions__item--completed {
+  opacity: 0.6;
+  background: var(--airo-gray-50);
+}
+
+.airo-actions__item-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+/* Checkbox */
+.airo-actions__checkbox-label {
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+}
+
+.airo-actions__checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.airo-actions__checkbox-custom {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--airo-gray-300);
+  border-radius: 4px;
+  background: #fff;
+  transition: all 0.15s;
+}
+
+.airo-actions__checkbox:checked + .airo-actions__checkbox-custom {
+  background: var(--airo-score-good);
+  border-color: var(--airo-score-good);
+}
+
+.airo-actions__checkbox:checked + .airo-actions__checkbox-custom::after {
+  content: '✓';
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  width: 100%;
+  height: 100%;
+}
+
+/* Item info */
+.airo-actions__item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.airo-actions__item-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--airo-gray-900);
+}
+
+.airo-actions__item-title--completed {
+  text-decoration: line-through;
+  color: var(--airo-gray-400);
+}
+
+.airo-actions__item-description {
+  font-size: 0.8125rem;
+  color: var(--airo-gray-600);
+  line-height: 1.4;
+}
+
+/* Suggested content block */
+.airo-actions__suggested {
+  margin-top: 0.75rem;
+  margin-left: 2.75rem;
+  padding: 0.75rem;
+  background: #f0f9ff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--airo-radius-sm);
+}
+
+.airo-actions__suggested-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.airo-actions__suggested-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1e40af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.airo-actions__copy-btn {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+}
+
+.airo-actions__suggested-content {
+  font-size: 0.8125rem;
+  color: var(--airo-gray-900);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* Admin link */
+.airo-actions__item-footer {
+  margin-top: 0.5rem;
+  margin-left: 2.75rem;
+}
+
+.airo-actions__admin-link {
+  font-size: 0.75rem;
+  color: var(--airo-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.airo-actions__admin-link:hover {
+  text-decoration: underline;
+}
+
+/* Empty state */
+.airo-actions__empty {
+  text-align: center;
+  padding: 2rem;
+  color: var(--airo-gray-600);
+}

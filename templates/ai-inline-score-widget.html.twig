@@ -1,0 +1,83 @@
+{#
+/**
+ * @file
+ * Inline score widget displayed on node edit forms.
+ *
+ * Variables:
+ * - score: The overall AI readiness score (0-100) or null.
+ * - is_analyzing: Boolean indicating analysis is in progress.
+ * - has_assessment: Boolean indicating a previous assessment exists.
+ * - node_id: The node ID.
+ * - high_priority_count: Number of high-priority action items.
+ * - score_color: 'good', 'warning', or 'danger'.
+ * - status_label: Human-readable status text.
+ * - donut_radius: SVG circle radius.
+ * - donut_circumference: SVG stroke-dasharray value.
+ * - donut_offset: SVG stroke-dashoffset value.
+ */
+#}
+<div class="airo-widget" data-node-id="{{ node_id }}">
+  {% if is_analyzing %}
+    {# Analyzing State #}
+    <div class="airo-widget__analyzing">
+      <div class="airo-widget__spinner"></div>
+      <div class="airo-widget__analyzing-text">
+        <span class="airo-widget__analyzing-title">{{ 'Analyzing content...'|t }}</span>
+        <span class="airo-widget__analyzing-subtitle">{{ 'AI readiness check in progress'|t }}</span>
+      </div>
+    </div>
+  {% elseif has_assessment and score is not null %}
+    {# Scored State #}
+    <div class="airo-widget__scored airo-widget--{{ score_color }}">
+      <div class="airo-widget__donut">
+        <svg viewBox="0 0 64 64" class="airo-widget__donut-svg">
+          <circle class="airo-widget__donut-bg"
+            cx="32" cy="32" r="{{ donut_radius }}"
+            fill="none" stroke="var(--airo-gray-200)" stroke-width="6" />
+          <circle class="airo-widget__donut-fill"
+            cx="32" cy="32" r="{{ donut_radius }}"
+            fill="none"
+            stroke="var(--airo-score-{{ score_color }})"
+            stroke-width="6"
+            stroke-dasharray="{{ donut_circumference }}"
+            stroke-dashoffset="{{ donut_offset }}"
+            stroke-linecap="round"
+            transform="rotate(-90 32 32)" />
+          <text x="32" y="32" text-anchor="middle" dominant-baseline="central"
+            class="airo-widget__donut-text">{{ score }}</text>
+        </svg>
+      </div>
+      <div class="airo-widget__info">
+        <span class="airo-widget__status airo-widget__status--{{ score_color }}">{{ status_label }}</span>
+        {% if high_priority_count > 0 %}
+          <span class="airo-widget__priority-badge">{{ high_priority_count }} {{ 'high priority'|t }}</span>
+        {% endif %}
+      </div>
+      <div class="airo-widget__actions">
+        {{ view_analysis_link }}
+        <button type="button" class="airo-widget__reanalyze button button--small"
+          data-assess-url="{{ assess_url }}">
+          {{ 'Re-analyze'|t }}
+        </button>
+      </div>
+    </div>
+  {% else %}
+    {# Not Evaluated State #}
+    <div class="airo-widget__empty">
+      <div class="airo-widget__empty-icon">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.35-4.35"/>
+        </svg>
+      </div>
+      <div class="airo-widget__empty-text">
+        <span class="airo-widget__empty-title">{{ 'AI Readiness Score'|t }}</span>
+        <span class="airo-widget__empty-subtitle">{{ 'Run an analysis to check AI readiness'|t }}</span>
+      </div>
+      <button type="button" class="airo-widget__run-analysis button button--primary button--small"
+        data-assess-url="{{ assess_url }}">
+        {{ 'Run Analysis'|t }}
+      </button>
+    </div>
+  {% endif %}
+</div>

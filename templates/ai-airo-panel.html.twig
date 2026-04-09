@@ -1,0 +1,62 @@
+{#
+/**
+ * @file
+ * Off-canvas AIRO analysis panel.
+ *
+ * Variables:
+ * - node_id: The node ID.
+ * - score: The overall score or null.
+ * - node_title: Title of the node being analyzed.
+ * - is_analyzing: Whether analysis is in progress.
+ * - active_tab: The currently active tab ID.
+ * - tab_content: Pre-rendered content for the initial active tab.
+ */
+#}
+<div class="airo-panel" data-node-id="{{ node_id }}">
+  {# Branded Header #}
+  <div class="airo-panel__header">
+    <div class="airo-panel__header-content">
+      <div class="airo-panel__brand">
+        <span class="airo-panel__logo">AIRO</span>
+        <span class="airo-panel__tagline">{{ 'AI Readiness Optimization'|t }}</span>
+      </div>
+      {% if node_title %}
+        <div class="airo-panel__node-title">{{ node_title }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if is_analyzing %}
+    {# Analyzing State #}
+    <div class="airo-panel__analyzing">
+      <div class="airo-panel__analyzing-spinner"></div>
+      <div class="airo-panel__analyzing-label">{{ 'Analyzing content...'|t }}</div>
+      <div class="airo-panel__analyzing-sublabel">{{ 'This may take a moment'|t }}</div>
+    </div>
+  {% endif %}
+
+  {# Tab Bar #}
+  <div class="airo-panel__tabs" role="tablist">
+    <button type="button" class="airo-panel__tab{% if active_tab == 'score-tab' %} airo-panel__tab--active{% endif %}"
+      data-tab="score-tab" role="tab" aria-selected="{{ active_tab == 'score-tab' ? 'true' : 'false' }}">
+      {{ 'AI Score'|t }}
+    </button>
+    <button type="button" class="airo-panel__tab{% if active_tab == 'action-items-tab' %} airo-panel__tab--active{% endif %}"
+      data-tab="action-items-tab" role="tab" aria-selected="{{ active_tab == 'action-items-tab' ? 'true' : 'false' }}">
+      {{ 'Action Items'|t }}
+    </button>
+    <button type="button" class="airo-panel__tab{% if active_tab == 'technical-audit-tab' %} airo-panel__tab--active{% endif %}"
+      data-tab="technical-audit-tab" role="tab" aria-selected="{{ active_tab == 'technical-audit-tab' ? 'true' : 'false' }}">
+      {{ 'Technical Audit'|t }}
+    </button>
+    <button type="button" class="airo-panel__tab{% if active_tab == 'preview-tab' %} airo-panel__tab--active{% endif %}"
+      data-tab="preview-tab" role="tab" aria-selected="{{ active_tab == 'preview-tab' ? 'true' : 'false' }}">
+      {{ 'AI Preview'|t }}
+    </button>
+  </div>
+
+  {# Tab Content Area #}
+  <div class="airo-panel__content" id="airo-tab-content" role="tabpanel">
+    {{ tab_content|raw }}
+  </div>
+</div>

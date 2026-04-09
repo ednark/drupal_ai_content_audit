@@ -25,6 +25,15 @@ services:
       - '@config.factory'
       - '@entity_type.manager'
 
+  ai_content_audit.technical_audit:
+    class: Drupal\ai_content_audit\Service\TechnicalAuditService
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@logger.channel.ai_content_audit'
+      - '@state'
+      - '@request_stack'
+
   ai_content_audit.ai_response_subscriber:
     class: Drupal\ai_content_audit\EventSubscriber\AiResponseSubscriber
     arguments:

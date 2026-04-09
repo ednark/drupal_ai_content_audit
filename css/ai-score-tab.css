@@ -1,0 +1,281 @@
+/* AI Score Tab Styles */
+
+.airo-score {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Section 1: Overview with donut */
+.airo-score__overview {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1rem;
+  background: var(--airo-gray-50);
+  border-radius: var(--airo-radius);
+}
+
+.airo-score__donut-container {
+  flex-shrink: 0;
+  width: 128px;
+  height: 128px;
+}
+
+.airo-score__donut-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.airo-score__donut-fill {
+  transition: stroke-dashoffset 1s ease-in-out;
+}
+
+.airo-score__donut-score {
+  font-size: 28px;
+  font-weight: 800;
+  fill: var(--airo-gray-900);
+}
+
+.airo-score__donut-label {
+  font-size: 11px;
+  font-weight: 500;
+  fill: var(--airo-gray-600);
+}
+
+.airo-score__overview-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Trend delta */
+.airo-score__trend {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.airo-score__trend--up {
+  color: var(--airo-score-good);
+}
+
+.airo-score__trend--down {
+  color: var(--airo-score-danger);
+}
+
+.airo-score__trend-arrow {
+  font-weight: 700;
+}
+
+/* Re-analyze button */
+.airo-score__reanalyze {
+  width: fit-content;
+}
+
+/* Section headers */
+.airo-score__section-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--airo-gray-900);
+  margin: 0 0 0.75rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--airo-gray-200);
+}
+
+/* Section 2: Sub-score breakdown */
+.airo-score__breakdown {
+  display: flex;
+  flex-direction: column;
+}
+
+.airo-score__subscore {
+  margin-bottom: 0.75rem;
+}
+
+.airo-score__subscore-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.375rem;
+}
+
+.airo-score__subscore-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--airo-gray-900);
+}
+
+.airo-score__subscore-value {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--airo-gray-600);
+}
+
+.airo-score__subscore-bar {
+  height: 8px;
+  background: var(--airo-gray-200);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.airo-score__subscore-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease-in-out;
+}
+
+/* Section 3: Checkpoints */
+.airo-score__checkpoints {
+  display: flex;
+  flex-direction: column;
+}
+
+.airo-score__checkpoint-group {
+  margin-bottom: 1rem;
+}
+
+.airo-score__checkpoint-category {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--airo-gray-600);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.5rem 0;
+}
+
+.airo-score__checkpoint-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.airo-score__checkpoint-row {
+  border-bottom: 1px solid var(--airo-gray-100);
+}
+
+.airo-score__checkpoint-row:last-child {
+  border-bottom: none;
+}
+
+.airo-score__checkpoint-icon {
+  width: 28px;
+  padding: 0.5rem 0.25rem 0.5rem 0;
+  text-align: center;
+}
+
+.airo-score__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.airo-score__icon--pass {
+  background: #d1fae5;
+  color: var(--airo-score-good);
+}
+
+.airo-score__icon--fail {
+  background: #fee2e2;
+  color: var(--airo-score-danger);
+}
+
+.airo-score__icon--warning {
+  background: #fef3c7;
+  color: var(--airo-score-warning);
+}
+
+.airo-score__checkpoint-item {
+  padding: 0.5rem 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--airo-gray-900);
+}
+
+.airo-score__checkpoint-priority {
+  padding: 0.5rem 0 0.5rem 0.5rem;
+  text-align: right;
+}
+
+.airo-score__priority-badge {
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  text-transform: capitalize;
+}
+
+.airo-score__priority-badge--high {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.airo-score__priority-badge--medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.airo-score__priority-badge--low {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+/* Section 4: History chart */
+.airo-score__history-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  height: 120px;
+  padding-top: 0.5rem;
+}
+
+.airo-score__history-bar-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.airo-score__history-bar {
+  width: 100%;
+  max-width: 32px;
+  background: var(--airo-primary);
+  border-radius: 4px 4px 0 0;
+  position: relative;
+  min-height: 4px;
+  transition: height 0.4s ease-in-out;
+  cursor: default;
+}
+
+.airo-score__history-value {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--airo-gray-600);
+  white-space: nowrap;
+}
+
+.airo-score__history-date {
+  font-size: 0.625rem;
+  color: var(--airo-gray-400);
+  margin-top: 0.25rem;
+  white-space: nowrap;
+}
+
+/* Empty state */
+.airo-score__empty {
+  text-align: center;
+  padding: 2rem;
+  color: var(--airo-gray-600);
+}
