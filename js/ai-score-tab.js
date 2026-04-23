@@ -29,7 +29,7 @@
           .then(function (data) {
             if (data.status === 'complete') {
               // Reload the score tab via the tab click handler
-              var scoreTabBtn = document.querySelector('.airo-panel__tab[data-tab="score-tab"]');
+              var scoreTabBtn = document.querySelector('.tabs__link[data-airo-tab="score-tab"]');
               if (scoreTabBtn) {
                 scoreTabBtn.click();
               } else {

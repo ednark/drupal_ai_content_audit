@@ -111,7 +111,7 @@
           .then(function (data) {
             if (data.status === 'complete') {
               // Reload the action items tab
-              var tabBtn = document.querySelector('.airo-panel__tab[data-tab="action-items-tab"]');
+              var tabBtn = document.querySelector('.tabs__link[data-airo-tab="action-items-tab"]');
               if (tabBtn) {
                 tabBtn.click();
               } else {

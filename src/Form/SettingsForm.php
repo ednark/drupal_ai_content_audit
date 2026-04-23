@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\ai_content_audit\Form;
 
 use Drupal\ai\AiProviderPluginManager;
+use Drupal\ai_content_audit\Service\ProviderModelChoices;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
@@ -30,6 +31,7 @@ final class SettingsForm extends ConfigFormBase {
     TypedConfigManagerInterface $typedConfigManager,
     private readonly AiProviderPluginManager $aiProviderManager,
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly ProviderModelChoices $providerModelChoices,
   ) {
     parent::__construct($config_factory, $typedConfigManager);
   }
@@ -43,6 +45,7 @@ final class SettingsForm extends ConfigFormBase {
       $container->get('config.typed'),
       $container->get('ai.provider'),
       $container->get('entity_type.manager'),
+      $container->get('ai_content_audit.provider_model_choices'),
     );
   }
 
@@ -76,8 +79,8 @@ final class SettingsForm extends ConfigFormBase {
       $form['provider_status'] = [
         '#type'   => 'markup',
         '#markup' => '<div class="messages messages--status">'
-          . $this->t('✓ A chat provider is configured (default: <strong>@provider</strong> / <strong>@model</strong>). '
-              . 'To change providers, visit <a href=":url">AI Providers configuration</a>.',
+          . $this->t('✓ A chat provider is configured (global default: <strong>@provider</strong> / <strong>@model</strong>). '
+              . 'To manage API keys and providers, visit <a href=":url">AI Providers configuration</a>.',
             [
               '@provider' => $default['provider_id'] ?? '—',
               '@model'    => $default['model_id'] ?? '—',
@@ -93,7 +96,7 @@ final class SettingsForm extends ConfigFormBase {
         '#type'   => 'markup',
         '#markup' => '<div class="messages messages--warning">'
           . $this->t('⚠ No AI chat provider is configured. '
-              . 'Install a provider module (e.g. <em>AI Provider: OpenAI</em>) and '
+              . 'Install a provider module (e.g. <em>AI Provider: OpenAI</em> or <em>AI Provider: Anthropic</em>) and '
               . '<a href=":url">configure it here</a> before running assessments.',
             [':url' => $providers_url]
           )
@@ -102,15 +105,49 @@ final class SettingsForm extends ConfigFormBase {
       ];
     }
 
-    // ── AI provider / model note ─────────────────────────────────────────────
-    $settings_url = Url::fromRoute('ai.settings_form', ['nojs' => 'nojs'])->toString();
-    $form['ai_settings_note'] = [
-      '#type'   => 'markup',
-      '#markup' => '<p>' . $this->t(
-          'AI provider and model settings are managed globally at <a href=":url">AI settings</a>.',
-          [':url' => $settings_url]
-        ) . '</p>',
+    // ── Default AI provider / model selector ─────────────────────────────────
+    $form['provider_model_fieldset'] = [
+      '#type'  => 'fieldset',
+      '#title' => $this->t('Default AI provider and model'),
     ];
+
+    // Build the grouped select options from all enabled chat providers.
+    $provider_options = $this->providerModelChoices->getGroupedSelectOptions('chat');
+
+    // Current saved value — reconstruct the composite key.
+    $saved_provider = $config->get('default_provider') ?? '';
+    $saved_model    = $config->get('default_model') ?? '';
+    $saved_key      = ($saved_provider !== '' && $saved_model !== '')
+      ? $saved_provider . '__' . $saved_model
+      : '';
+
+    if (!empty($provider_options)) {
+      // Prepend a "use global default" option.
+      $select_options = ['' => $this->t('— Use global AI default —')] + $provider_options;
+
+      $form['provider_model_fieldset']['default_provider_model'] = [
+        '#type'          => 'select',
+        '#title'         => $this->t('Provider / model'),
+        '#options'       => $select_options,
+        '#default_value' => $saved_key,
+        '#description'   => $this->t(
+          'Select the AI provider and model to use for content audits. '
+          . 'Choose "Use global AI default" to defer to the site-wide setting configured at '
+          . '<a href=":url">AI Providers</a>.',
+          [':url' => $providers_url]
+        ),
+      ];
+    }
+    else {
+      $form['provider_model_fieldset']['default_provider_model'] = [
+        '#type'   => 'markup',
+        '#markup' => '<p class="messages messages--warning">'
+          . $this->t('No configured AI chat providers found. '
+            . 'Please <a href=":url">configure at least one provider</a> first.',
+            [':url' => $providers_url])
+          . '</p>',
+      ];
+    }
 
     // ── On-save assessment toggle ────────────────────────────────────────────
     $form['assess_on_save'] = [
@@ -184,6 +221,10 @@ final class SettingsForm extends ConfigFormBase {
     // array_filter removes unchecked checkboxes (Drupal returns 0 for unchecked).
     $node_types = array_keys(array_filter($form_state->getValue('node_types')));
 
+    // Split the composite 'provider__model' key into separate config values.
+    $provider_model_key = (string) ($form_state->getValue('default_provider_model') ?? '');
+    [$default_provider, $default_model] = $this->providerModelChoices->parseKey($provider_model_key);
+
     $this->config(self::CONFIG_NAME)
       ->set('enable_on_save', (bool) $form_state->getValue('assess_on_save'))
       ->set('node_types', $node_types)
@@ -191,6 +232,8 @@ final class SettingsForm extends ConfigFormBase {
       ->set('enable_history', (bool) $form_state->getValue('enable_history'))
       ->set('max_assessments_per_node', (int) $form_state->getValue('max_assessments_per_node'))
       ->set('render_mode', $form_state->getValue('render_mode'))
+      ->set('default_provider', $default_provider)
+      ->set('default_model', $default_model)
       ->save();
 
     parent::submitForm($form, $form_state);

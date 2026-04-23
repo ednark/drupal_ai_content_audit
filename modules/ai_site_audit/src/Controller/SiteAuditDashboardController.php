@@ -23,8 +23,10 @@ class SiteAuditDashboardController extends ControllerBase {
     protected AnalysisOrchestrator $orchestrator,
     protected SiteAggregationService $aggregationService,
     protected SiteAnalysisService $analysisService,
-    protected ConfigFactoryInterface $configFactory,
-  ) {}
+    ConfigFactoryInterface $configFactory,
+  ) {
+    $this->configFactory = $configFactory;
+  }
 
   /**
    * {@inheritdoc}
@@ -60,6 +62,7 @@ class SiteAuditDashboardController extends ControllerBase {
       '#rollup' => $data['rollup'],
       '#ai_insights' => $data['ai_insights'],
       '#technical_audit' => $data['technical_audit'] ?? [],
+      '#filesystem_audit' => $data['filesystem_audit'] ?? [],
       '#analysis_state' => $data['analysis_state'] ?? [],
       '#config' => [
         'enable_csv_export' => (bool) $config->get('enable_csv_export'),
@@ -169,6 +172,64 @@ class SiteAuditDashboardController extends ControllerBase {
   }
 
   /**
+   * Content type comparison page.
+   *
+   * Shows side-by-side audit metrics for each content type with score
+   * distribution, sub-score breakdowns, and top action items per type.
+   */
+  public function contentTypeComparison(): array {
+    $contentTypes = $this->aggregationService->getContentTypeBreakdown();
+    $config = $this->configFactory->get('ai_site_audit.settings');
+
+    // Get per-type score distributions and top/bottom nodes.
+    $typeDetails = [];
+    foreach ($contentTypes as $ct) {
+      $type = $ct['type'];
+      $topNodes = $this->aggregationService->getTopBottomNodes(5, 'best');
+      $bottomNodes = $this->aggregationService->getTopBottomNodes(5, 'worst');
+
+      // Filter to this content type.
+      $typeTopNodes = array_values(array_filter($topNodes, fn($n) => $n['type'] === $type));
+      $typeBottomNodes = array_values(array_filter($bottomNodes, fn($n) => $n['type'] === $type));
+
+      $typeDetails[] = [
+        'type' => $type,
+        'label' => $ct['label'],
+        'count' => $ct['count'],
+        'avg_score' => $ct['avg_score'],
+        'min_score' => $ct['min_score'],
+        'max_score' => $ct['max_score'],
+        'score_range' => $ct['max_score'] - $ct['min_score'],
+        'top_nodes' => array_slice($typeTopNodes, 0, 3),
+        'bottom_nodes' => array_slice($typeBottomNodes, 0, 3),
+      ];
+    }
+
+    // Sort by avg_score ascending (worst first) for priority view.
+    usort($typeDetails, fn($a, $b) => $a['avg_score'] <=> $b['avg_score']);
+
+    // Get overall average for comparison baseline.
+    $overallStats = $this->aggregationService->getOverallStats();
+
+    $build = [
+      '#theme' => 'ai_site_audit_content_type_comparison',
+      '#content_types' => $typeDetails,
+      '#overall_avg' => $overallStats['avg_score'] ?? 0,
+      '#overall_count' => $overallStats['total_assessed'] ?? 0,
+      '#attached' => [
+        'library' => ['ai_site_audit/site-dashboard'],
+      ],
+      '#cache' => [
+        'tags' => ['ai_content_assessment_list', 'ai_site_audit:summary'],
+        'max-age' => (int) ($config->get('dashboard_cache_max_age') ?: 300),
+        'contexts' => ['user.permissions'],
+      ],
+    ];
+
+    return $build;
+  }
+
+  /**
    * Export dashboard data as CSV or JSON.
    *
    * @param string $format
@@ -209,6 +270,7 @@ class SiteAuditDashboardController extends ControllerBase {
       'rollup' => $data['rollup'],
       'ai_insights' => $data['ai_insights'],
       'technical_audit' => $data['technical_audit'] ?? [],
+      'filesystem_audit' => $data['filesystem_audit'] ?? [],
     ];
 
     $response = new Response(
@@ -317,6 +379,21 @@ class SiteAuditDashboardController extends ControllerBase {
       fputcsv($output, ['Action Item', 'Count', 'Priority']);
       foreach ($rollup['top_action_items'] as $ai) {
         fputcsv($output, [$ai['title'], $ai['count'], $ai['priority']]);
+      }
+    }
+
+    // Filesystem audit results.
+    $fsResults = $data['filesystem_audit'] ?? [];
+    if (!empty($fsResults)) {
+      fputcsv($output, []);
+      fputcsv($output, ['Filesystem Audit Results']);
+      fputcsv($output, ['Check', 'Status', 'Description']);
+      foreach ($fsResults as $check) {
+        fputcsv($output, [
+          $check['label'] ?? $check['check'] ?? '',
+          $check['status'] ?? '',
+          $check['description'] ?? '',
+        ]);
       }
     }
 

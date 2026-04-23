@@ -10,3 +10,6 @@ site-dashboard:
     - core/drupalSettings
     - core/drupal.ajax
     - core/once
+    # design-tokens (css.base weight) must load before the dashboard component
+    # CSS so all --airo-* custom properties are defined when this file runs.
+    - ai_content_audit/design-tokens

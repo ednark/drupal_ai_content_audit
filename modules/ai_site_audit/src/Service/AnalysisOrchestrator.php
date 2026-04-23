@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\ai_site_audit\Service;
 
+use Drupal\ai_content_audit\Service\FilesystemAuditService;
 use Drupal\ai_content_audit\Service\TechnicalAuditService;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Queue\QueueFactory;
@@ -33,6 +34,7 @@ class AnalysisOrchestrator {
     protected SiteRollupService $rollupService,
     protected SiteAnalysisService $analysisService,
     protected TechnicalAuditService $technicalAuditService,
+    protected FilesystemAuditService $filesystemAuditService,
     protected StateInterface $state,
     protected QueueFactory $queueFactory,
     protected ConfigFactoryInterface $configFactory,
@@ -91,11 +93,40 @@ class AnalysisOrchestrator {
         $technicalResults
       );
 
+      // Get filesystem audit results.
+      $filesystemResults = $this->filesystemAuditService->runAllChecks();
+      $fsArrays = array_map(
+        fn($r) => is_object($r) && method_exists($r, 'toArray') ? $r->toArray() : (array) $r,
+        $filesystemResults
+      );
+
       $result['ai_insights'] = $this->analysisService->analyzeStatistics(
         $result['rollup'],
-        $techArrays
+        $techArrays,
+        $fsArrays,
       );
       $result['technical_audit'] = $techArrays;
+      $result['filesystem_audit'] = $fsArrays;
+
+      // Fix B: analyzeStatistics() catches its own exceptions and returns an
+      // error array rather than re-throwing. Treat that as a pipeline failure
+      // so the state is set to STATE_FAILED instead of falling through to
+      // STATE_COMPLETE, which would make the UI reload with no insights.
+      if (isset($result['ai_insights']['error'])) {
+        $errorMessage = $result['ai_insights']['error'];
+        $this->setAnalysisState(self::STATE_FAILED);
+        $this->state->set('ai_site_audit.analysis_progress', [
+          'state' => self::STATE_FAILED,
+          'error' => $errorMessage,
+          'failed_at' => time(),
+        ]);
+        $this->logger->error('AI interpretation step failed (non-exception): @error', [
+          '@error' => $errorMessage,
+        ]);
+        $result['error'] = $errorMessage;
+        $result['completed_at'] = time();
+        return $result;
+      }
 
       $this->setAnalysisState(self::STATE_COMPLETE);
       $result['completed_at'] = time();
@@ -139,6 +170,14 @@ class AnalysisOrchestrator {
       'tier' => $tier,
       'enqueued_at' => time(),
     ]);
+
+    // Fix A: Immediately advance the state to STATE_AGGREGATING after enqueue.
+    // This prevents the JS poller from seeing a stale 'complete' state left
+    // over from a previous (possibly failed) run and triggering a phantom page
+    // reload before the queue worker has had a chance to execute.
+    // Setting a non-terminal state also prevents a second click from
+    // double-enqueueing while the first item is still in the queue.
+    $this->setAnalysisState(self::STATE_AGGREGATING);
 
     $this->logger->info('Sitewide analysis enqueued at tier @tier.', ['@tier' => $tier]);
     return TRUE;
@@ -194,6 +233,19 @@ class AnalysisOrchestrator {
     catch (\Exception $e) {
       $data['technical_audit'] = [];
       $this->logger->warning('Technical audit failed in dashboard: @message', ['@message' => $e->getMessage()]);
+    }
+
+    // Include filesystem audit if available.
+    try {
+      $fsResults = $this->filesystemAuditService->runAllChecks();
+      $data['filesystem_audit'] = array_map(
+        fn($r) => is_object($r) && method_exists($r, 'toArray') ? $r->toArray() : (array) $r,
+        $fsResults
+      );
+    }
+    catch (\Exception $e) {
+      $data['filesystem_audit'] = [];
+      $this->logger->warning('Filesystem audit failed in dashboard: @message', ['@message' => $e->getMessage()]);
     }
 
     return $data;

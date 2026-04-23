@@ -7,5 +7,13 @@ services:
       - '@queue'
       - '@config.factory'
       - '@module_installer'
+      - '@ai_content_audit.provider_model_choices'
+    tags:
+      - { name: drush.command }
+
+  ai_content_audit.commands.filesystem_audit:
+    class: Drupal\ai_content_audit\Commands\AiFilesystemAuditCommands
+    arguments:
+      - '@ai_content_audit.filesystem_audit'
     tags:
       - { name: drush.command }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\ai_content_audit\Plugin\ContentExtractor;
 
 use Drupal\ai_content_audit\Extractor\ContentExtractorInterface;
+use Drupal\ai_content_audit\Extractor\EntityContextTrait;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Plugin\PluginBase;
@@ -18,6 +19,15 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * Only fields that appear in the configured entity view display and whose
  * field type is extractable (string, text, etc.) are included.
  *
+ * The extracted string is assembled in three sections:
+ * 1. A "--- Content Metadata ---" header block (title, content type, dates,
+ *    canonical URL) prepended via EntityContextTrait::buildContentMetadataBlock().
+ * 2. The field-level content extracted from all displayable, extractable fields,
+ *    with heading tags and image Alt attributes preserved as text markers via
+ *    convertAndStripHtml() before HTML is stripped.
+ * 3. An "--- Entity Context ---" footer block (author, taxonomy terms, entity
+ *    reference counts) appended via EntityContextTrait::buildEntityContextBlock().
+ *
  * @ContentExtractor(
  *   id = "field_text",
  *   label = @Translation("Field text extractor"),
@@ -26,6 +36,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * )
  */
 class FieldExtractor extends PluginBase implements ContentExtractorInterface, ContainerFactoryPluginInterface {
+
+  use EntityContextTrait;
 
   /**
    * Field types considered text-based and extractable.
@@ -81,9 +93,26 @@ class FieldExtractor extends PluginBase implements ContentExtractorInterface, Co
 
   /**
    * {@inheritdoc}
+   *
+   * Assembles extracted content in three sections:
+   * - Content Metadata header block (title, dates, URL) prepended at the top.
+   * - Field-level body content with structural HTML markers preserved.
+   * - Entity Context footer block (author, taxonomy, references) appended at the end.
+   *
+   * Truncation to max_chars_per_request is applied after all sections are joined.
    */
   public function extract(NodeInterface $node): string {
-    return $this->extractForNode($node);
+    $metadata = $this->buildContentMetadataBlock($node);
+    $body = $this->extractForNode($node);
+    $context = $this->buildEntityContextBlock($node);
+
+    $parts = array_filter([
+      $metadata,
+      $body,
+      $context,
+    ], fn(string $part): bool => $part !== '');
+
+    return implode("\n\n", $parts);
   }
 
   /**
@@ -96,19 +125,20 @@ class FieldExtractor extends PluginBase implements ContentExtractorInterface, Co
   /**
    * Extracts all displayable text from a node as a single string.
    *
+   * This method is responsible only for the field-level body content; the
+   * surrounding metadata and entity context blocks are added by extract().
+   *
    * @param \Drupal\node\NodeInterface $node
    *   The node to extract content from.
    * @param string $view_mode
    *   The view mode to check display configuration against.
    *
    * @return string
-   *   Compiled plain-text content from all extractable fields.
+   *   Compiled plain-text content from all extractable fields, or an empty
+   *   string when no extractable field values are found.
    */
   public function extractForNode(NodeInterface $node, string $view_mode = 'default'): string {
     $parts = [];
-
-    // Always include the title.
-    $parts[] = 'Title: ' . $node->label();
 
     // Load the active entity view display to check which fields are shown.
     $display = $this->loadViewDisplay($node->bundle(), $view_mode);
@@ -174,6 +204,12 @@ class FieldExtractor extends PluginBase implements ContentExtractorInterface, Co
   /**
    * Extracts plain text from a specific field on a node.
    *
+   * For HTML-capable field types (text, text_long, text_with_summary),
+   * convertAndStripHtml() is used so that heading structure and image alt text
+   * are preserved as LLM-readable markers before HTML tags are stripped.
+   * Plain string types (string, string_long, list_string) are processed with
+   * strip_tags() directly because their values do not contain HTML markup.
+   *
    * @param \Drupal\node\NodeInterface $node
    *   The node containing the field.
    * @param string $field_name
@@ -194,10 +230,10 @@ class FieldExtractor extends PluginBase implements ContentExtractorInterface, Co
           $value = $item->value ?? '';
           $summary = $item->summary ?? '';
           if (!empty($summary)) {
-            $texts[] = $this->stripHtml($summary);
+            $texts[] = $this->convertAndStripHtml($summary);
           }
           if (!empty($value)) {
-            $texts[] = $this->stripHtml($value);
+            $texts[] = $this->convertAndStripHtml($value);
           }
           break;
 
@@ -205,7 +241,7 @@ class FieldExtractor extends PluginBase implements ContentExtractorInterface, Co
         case 'text_long':
           $value = $item->value ?? '';
           if (!empty($value)) {
-            $texts[] = $this->stripHtml($value);
+            $texts[] = $this->convertAndStripHtml($value);
           }
           break;
 
@@ -224,21 +260,93 @@ class FieldExtractor extends PluginBase implements ContentExtractorInterface, Co
   }
 
   /**
+   * Converts structural HTML elements to text markers, then strips remaining tags.
+   *
+   * This method is applied to field values that may contain rich HTML (text,
+   * text_long, text_with_summary) to preserve structural signals for the LLM:
+   *
+   * - Heading elements (<h1>–<h6>) become markdown-style markers such as
+   *   "# H1: Heading text" on their own lines, preserving content hierarchy.
+   * - Image elements (<img>) become "[Image: alt text]" or "[Image: no alt text]"
+   *   so image accessibility is visible to the LLM without the binary data.
+   * - Anchor elements (<a href="...">) become "[Link: anchor text (href)]" so
+   *   link presence and destinations are readable in plain text.
+   * - All remaining HTML tags are stripped via the existing stripHtml() helper,
+   *   which also decodes HTML entities and normalises whitespace.
+   *
+   * @param string $html
+   *   The HTML string to process, typically a rich text field value.
+   *
+   * @return string
+   *   Plain text with structural markers preserved and whitespace normalised.
+   */
+  protected function convertAndStripHtml(string $html): string {
+    // Phase 1: Convert <h1>–<h6> to markdown-style heading markers.
+    $html = preg_replace_callback(
+      '/<h([1-6])[^>]*>(.*?)<\/h\1>/si',
+      function (array $m): string {
+        $level = (int) $m[1];
+        $text = strip_tags($m[2]);
+        return "\n" . str_repeat('#', $level) . " H{$level}: " . $text . "\n";
+      },
+      $html
+    );
+
+    // Phase 2a: Convert <img> tags that have an alt attribute.
+    $html = preg_replace_callback(
+      '/<img[^>]+alt=["\']([^"\']*)["\'][^>]*\/?>/i',
+      function (array $m): string {
+        $alt = trim($m[1]);
+        return !empty($alt) ? " [Image: {$alt}] " : ' [Image: no alt text] ';
+      },
+      $html
+    );
+
+    // Phase 2b: Convert remaining <img> tags that have no alt attribute at all.
+    $html = (string) preg_replace('/<img(?![^>]*\balt=)[^>]*\/?>/i', ' [Image: no alt text] ', $html);
+
+    // Phase 3: Convert <a href="..."> anchors to [Link: text (href)] markers.
+    $html = preg_replace_callback(
+      '/<a\s[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)<\/a>/si',
+      function (array $m): string {
+        $href = trim($m[1]);
+        $text = trim(strip_tags($m[2]));
+        if ($text === '') {
+          $text = $href;
+        }
+        return " [Link: {$text} ({$href})] ";
+      },
+      $html
+    );
+
+    // Phase 4: Strip all remaining tags, decode entities, and normalise
+    // whitespace — reusing the existing stripHtml() helper.
+    return $this->stripHtml($html);
+  }
+
+  /**
    * Strips HTML and normalizes whitespace from a string.
+   *
+   * This is the final normalisation step used by both convertAndStripHtml() for
+   * rich-text fields and (indirectly) convertAndStripHtml()-free code paths.
+   * Heading/image/link markers inserted by convertAndStripHtml() are preserved
+   * because they do not contain HTML tags.
    *
    * @param string $html
    *   The HTML string to process.
    *
    * @return string
-   *   Plain text with normalized whitespace.
+   *   Plain text with normalised whitespace.
    */
   protected function stripHtml(string $html): string {
     // Decode HTML entities first.
     $text = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    // Strip all tags.
+    // Strip all remaining tags.
     $text = strip_tags($text);
-    // Normalize whitespace.
-    $text = preg_replace('/\s+/', ' ', $text);
+    // Collapse multiple consecutive blank lines to at most two newlines.
+    $text = (string) preg_replace('/\n{3,}/', "\n\n", $text);
+    // Collapse inline runs of whitespace (spaces/tabs) but preserve newlines.
+    $text = (string) preg_replace('/[^\S\n]+/', ' ', $text);
     return trim($text);
   }
 

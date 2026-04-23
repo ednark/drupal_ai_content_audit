@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\ai_content_audit\Commands;
 
 use Drupal\ai_content_audit\Service\AiAssessmentService;
+use Drupal\ai_content_audit\Service\ProviderModelChoices;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleInstallerInterface;
@@ -20,8 +21,10 @@ use Drush\Commands\DrushCommands;
  *
  * Usage:
  *   drush ai_content_audit:assess --nid=42
+ *   drush ai_content_audit:assess --nid=42 --provider=anthropic --model=claude-3-5-sonnet-20241022
  *   drush ai_content_audit:assess --all
- *   drush ai_content_audit:assess --all --type=article
+ *   drush ai_content_audit:assess --all --type=article --provider=openai --model=gpt-4o
+ *   drush ai_content_audit:providers
  *   drush ai_content_audit:purge
  *   drush ai_content_audit:reinstall
  */
@@ -33,6 +36,7 @@ final class AiContentAuditCommands extends DrushCommands {
     private readonly QueueFactory $queueFactory,
     private readonly ConfigFactoryInterface $configFactory,
     private readonly ModuleInstallerInterface $moduleInstaller,
+    private readonly ProviderModelChoices $providerModelChoices,
   ) {
     parent::__construct();
   }
@@ -45,23 +49,38 @@ final class AiContentAuditCommands extends DrushCommands {
   #[Option(name: 'nid', description: 'Node ID to assess synchronously.')]
   #[Option(name: 'all', description: 'Enqueue ALL published nodes of the configured types for background assessment via cron.')]
   #[Option(name: 'type', description: 'Limit bulk enqueue to a specific node type machine name (e.g. article). Requires --all.')]
-  #[Usage(name: 'drush aca --nid=42', description: 'Assess node 42 synchronously.')]
+  #[Option(name: 'provider', description: 'AI provider plugin ID to use (e.g. openai, anthropic). Overrides the configured default.')]
+  #[Option(name: 'model', description: 'AI model ID to use (e.g. gpt-4o, claude-3-5-sonnet-20241022). Overrides the configured default.')]
+  #[Usage(name: 'drush aca --nid=42', description: 'Assess node 42 using the configured default provider.')]
+  #[Usage(name: 'drush aca --nid=42 --provider=anthropic --model=claude-3-5-sonnet-20241022', description: 'Assess node 42 using Anthropic Claude.')]
   #[Usage(name: 'drush aca --all', description: 'Enqueue all configured node types for assessment.')]
-  #[Usage(name: 'drush aca --all --type=article', description: 'Enqueue all published article nodes.')]
+  #[Usage(name: 'drush aca --all --type=article --provider=openai --model=gpt-4o', description: 'Enqueue all article nodes using OpenAI GPT-4o.')]
   public function assess(
     array $options = [
-      'nid'  => self::OPT,
-      'all'  => FALSE,
-      'type' => self::OPT,
+      'nid'      => self::OPT,
+      'all'      => FALSE,
+      'type'     => self::OPT,
+      'provider' => self::OPT,
+      'model'    => self::OPT,
     ],
   ): void {
+    // Build runtime AI options from CLI flags (empty values are ignored
+    // downstream — the service falls back to configured defaults).
+    $ai_options = [];
+    if (!empty($options['provider'])) {
+      $ai_options['provider_id'] = $options['provider'];
+    }
+    if (!empty($options['model'])) {
+      $ai_options['model_id'] = $options['model'];
+    }
+
     if ($options['nid']) {
-      $this->assessSingleNode((int) $options['nid']);
+      $this->assessSingleNode((int) $options['nid'], $ai_options);
       return;
     }
 
     if ($options['all']) {
-      $this->enqueueBulk($options['type'] ?? NULL);
+      $this->enqueueBulk($options['type'] ?? NULL, $ai_options);
       return;
     }
 
@@ -69,10 +88,52 @@ final class AiContentAuditCommands extends DrushCommands {
     $this->io()->text('Examples:');
     $this->io()->listing([
       'drush aca --nid=42',
+      'drush aca --nid=42 --provider=anthropic --model=claude-3-5-sonnet-20241022',
       'drush aca --all',
       'drush aca --all --type=article',
     ]);
     throw new \RuntimeException('No valid option provided. Use --nid or --all.');
+  }
+
+  /**
+   * List all enabled AI providers and their configured models for chat.
+   */
+  #[Command(name: 'ai-content-audit:providers', aliases: ['acap'])]
+  #[Help(description: 'List all enabled AI providers and their configured models available for content audit.')]
+  #[Usage(name: 'drush acap', description: 'Print a table of provider / model pairs for the chat operation type.')]
+  public function listProviders(): void {
+    $choices = $this->providerModelChoices->forOperationType('chat');
+
+    if (empty($choices)) {
+      $this->io()->warning('No configured AI chat providers found. Install and configure a provider module first.');
+      return;
+    }
+
+    // Build table rows.
+    $rows = [];
+    foreach ($choices as $choice) {
+      $rows[] = [
+        $choice['provider_id'],
+        $choice['model_id'],
+        $choice['label'],
+        $choice['key'],
+      ];
+    }
+
+    $this->io()->table(
+      ['Provider ID', 'Model ID', 'Label', 'Composite key (provider__model)'],
+      $rows,
+    );
+
+    // Print the currently configured module-level default.
+    $config        = $this->configFactory->get('ai_content_audit.settings');
+    $def_provider  = $config->get('default_provider') ?: '(global default)';
+    $def_model     = $config->get('default_model') ?: '(global default)';
+    $this->io()->note(sprintf(
+      'Module default → provider: %s | model: %s',
+      $def_provider,
+      $def_model,
+    ));
   }
 
   /**
@@ -176,8 +237,14 @@ final class AiContentAuditCommands extends DrushCommands {
 
   /**
    * Runs an AI assessment on a single node synchronously.
+   *
+   * @param int $nid
+   *   Node ID to assess.
+   * @param array $ai_options
+   *   Optional AI overrides passed to AiAssessmentService::assessNode().
+   *   Supported keys: 'provider_id', 'model_id'.
    */
-  private function assessSingleNode(int $nid): void {
+  private function assessSingleNode(int $nid, array $ai_options = []): void {
     $node = $this->entityTypeManager->getStorage('node')->load($nid);
 
     if (!$node) {
@@ -185,8 +252,12 @@ final class AiContentAuditCommands extends DrushCommands {
       throw new \RuntimeException(sprintf('Node %d not found.', $nid));
     }
 
-    $this->io()->text(sprintf('Assessing node %d: %s', $nid, $node->label()));
-    $result = $this->assessmentService->assessNode($node);
+    $provider_label = !empty($ai_options['provider_id'])
+      ? sprintf(' [provider: %s, model: %s]', $ai_options['provider_id'], $ai_options['model_id'] ?? 'default')
+      : '';
+
+    $this->io()->text(sprintf('Assessing node %d: %s%s', $nid, $node->label(), $provider_label));
+    $result = $this->assessmentService->assessNode($node, $ai_options);
 
     if ($result['success']) {
       $score = $result['parsed']['ai_readiness_score'] ?? 'N/A';
@@ -201,8 +272,15 @@ final class AiContentAuditCommands extends DrushCommands {
 
   /**
    * Enqueues all eligible published nodes for background assessment.
+   *
+   * @param string|null $type
+   *   Optional node type to limit enqueue to.
+   * @param array $ai_options
+   *   Optional AI overrides to embed in each queue item.
+   *   Supported keys: 'provider_id', 'model_id'.
+   *   The queue worker passes these to AiAssessmentService::assessNode().
    */
-  private function enqueueBulk(?string $type = NULL): void {
+  private function enqueueBulk(?string $type = NULL, array $ai_options = []): void {
     $config           = $this->configFactory->get('ai_content_audit.settings');
     $configured_types = $config->get('node_types') ?? [];
     $storage          = $this->entityTypeManager->getStorage('node');
@@ -245,8 +323,8 @@ final class AiContentAuditCommands extends DrushCommands {
 
     $this->io()->progressStart($total);
 
-    // M-5: Process nodes in chunks to avoid exhausting PHP memory on large
-    // sites.  Each iteration fetches at most $chunk_size node IDs.
+    // Process nodes in chunks to avoid exhausting PHP memory on large sites.
+    // Each iteration fetches at most $chunk_size node IDs.
     $chunk_size = 50;
     foreach ($types as $node_type) {
       $offset = 0;
@@ -259,7 +337,12 @@ final class AiContentAuditCommands extends DrushCommands {
           ->execute();
 
         foreach ($nids as $nid) {
-          $queue->createItem(['nid' => (int) $nid]);
+          // Embed ai_options in the queue item so the worker can honour them.
+          $item = ['nid' => (int) $nid];
+          if (!empty($ai_options)) {
+            $item['options'] = $ai_options;
+          }
+          $queue->createItem($item);
           $queued++;
           $this->io()->progressAdvance();
         }

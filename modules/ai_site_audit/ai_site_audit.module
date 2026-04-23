@@ -61,6 +61,14 @@ function ai_site_audit_theme(): array {
       ],
       'template' => 'ai-site-audit-technical-summary',
     ],
+    'ai_site_audit_content_type_comparison' => [
+      'variables' => [
+        'content_types' => NULL,
+        'overall_avg' => NULL,
+        'overall_count' => NULL,
+      ],
+      'template' => 'ai-site-audit-content-type-comparison',
+    ],
   ];
 }
 
@@ -144,4 +152,96 @@ function ai_site_audit_cron(): void {
       }
     }
   }
+}
+
+/**
+ * Implements hook_views_data().
+ *
+ * Exposes sitewide content type audit metrics as a virtual Views table
+ * backed by the SiteAggregationService.
+ */
+function ai_site_audit_views_data(): array {
+  $data = [];
+
+  $data['ai_site_audit_content_type_stats'] = [
+    'table' => [
+      'group' => t('AI Site Audit'),
+      'provider' => 'ai_site_audit',
+      'base' => [
+        'field' => 'content_type',
+        'title' => t('Content Type Audit Statistics'),
+        'help' => t('Aggregated AI content audit statistics per content type.'),
+        'query_id' => 'ai_site_audit_content_type_stats',
+      ],
+    ],
+    'content_type' => [
+      'title' => t('Content Type'),
+      'help' => t('The machine name of the content type.'),
+      'field' => [
+        'id' => 'standard',
+      ],
+      'sort' => [
+        'id' => 'standard',
+      ],
+      'filter' => [
+        'id' => 'string',
+      ],
+    ],
+    'content_type_label' => [
+      'title' => t('Content Type Label'),
+      'help' => t('The human-readable label of the content type.'),
+      'field' => [
+        'id' => 'standard',
+      ],
+    ],
+    'count' => [
+      'title' => t('Assessment Count'),
+      'help' => t('Number of assessed nodes of this content type.'),
+      'field' => [
+        'id' => 'numeric',
+      ],
+      'sort' => [
+        'id' => 'standard',
+      ],
+      'filter' => [
+        'id' => 'numeric',
+      ],
+    ],
+    'avg_score' => [
+      'title' => t('Average Score'),
+      'help' => t('Average audit score for this content type.'),
+      'field' => [
+        'id' => 'numeric',
+        'float' => TRUE,
+      ],
+      'sort' => [
+        'id' => 'standard',
+      ],
+      'filter' => [
+        'id' => 'numeric',
+      ],
+    ],
+    'min_score' => [
+      'title' => t('Minimum Score'),
+      'help' => t('Lowest audit score for this content type.'),
+      'field' => [
+        'id' => 'numeric',
+      ],
+      'sort' => [
+        'id' => 'standard',
+      ],
+    ],
+    'max_score' => [
+      'title' => t('Maximum Score'),
+      'help' => t('Highest audit score for this content type.'),
+      'field' => [
+        'id' => 'numeric',
+      ],
+      'sort' => [
+        'id' => 'standard',
+      ],
+    ],
+  ];
+
+  return $data;
 }

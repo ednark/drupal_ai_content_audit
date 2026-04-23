@@ -1,22 +1,24 @@
 {#
 /**
  * @file
- * AI Preview tab content for the AIRO panel.
+ * AI Preview tab — multi-provider comparison mode.
  *
  * Variables:
- * - providers: Array of provider objects with keys: id, label, model.
+ * - model_choices: Array of choice objects:
+ *     { key, label, provider_id, model_id }
+ * - selected_keys: Array of pre-selected provider__model keys (from tempstore).
+ * - has_permission: TRUE if the user may choose providers; FALSE = site default only.
  * - suggested_prompts: Array of suggested question strings.
- * - active_provider: Machine name of the currently active provider, or NULL.
  * - node_id: The node ID.
- * - query_url: URL endpoint for submitting preview queries.
+ * - query_url: POST endpoint URL for submitting preview queries.
  */
 #}
+{{ attach_library('ai_content_audit/provider_tabs') }}
 <div class="airo-preview"
   data-node-id="{{ node_id }}"
-  data-query-url="{{ query_url }}"
-  data-active-provider="{{ active_provider }}">
+  data-query-url="{{ query_url }}">
 
-  {# Query input area #}
+  {# ── Question input ─────────────────────────────────────────────────── #}
   <div class="airo-preview__query">
     <label class="airo-preview__query-label" for="airo-preview-input-{{ node_id }}">
       {{ 'Ask a question about this content'|t }}
@@ -29,60 +31,58 @@
         placeholder="{{ 'e.g. What are the key points of this content?'|t }}"
         autocomplete="off"
       />
-      <button type="button" class="airo-preview__submit button button--primary button--small">
+      <button type="button"
+        class="airo-preview__submit button button--primary button--small"
+        disabled>
         {{ 'Ask'|t }}
       </button>
     </div>
   </div>
 
-  {# Suggested prompts #}
-  {% if suggested_prompts is not empty %}
-    <div class="airo-preview__suggestions">
-      <span class="airo-preview__suggestions-label">{{ 'Try asking'|t }}</span>
-      <div class="airo-preview__suggestions-list">
-        {% for prompt in suggested_prompts %}
-          <button type="button" class="airo-preview__suggestion-btn" data-prompt="{{ prompt }}">
-            {{ prompt }}
-          </button>
-        {% endfor %}
-      </div>
+  {# ── Provider + model selector ───────────────────────────────────────── #}
+  {% if model_choices is not empty %}
+    <div class="airo-preview__model-selector">
+      {% if has_permission and model_choices|length > 1 %}
+        {# Multi-select: checkboxes for all configured provider+model combos #}
+        <details class="ai-content-audit-compare airo-preview__model-fieldset">
+          <summary class="airo-preview__model-legend">
+            {{ 'Compare providers'|t }}
+          </summary>
+          <div class="airo-preview__model-options">
+            {% for choice in model_choices %}
+              <label class="airo-preview__model-option">
+                <input
+                  type="checkbox"
+                  class="airo-preview__model-checkbox"
+                  name="provider_model"
+                  value="{{ choice.key }}"
+                  {{ choice.key in selected_keys ? 'checked' : '' }}
+                />
+                <span class="airo-preview__model-option-label">{{ choice.label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          <p class="airo-preview__model-hint">
+            {{ 'Select one or more to compare answers side by side.'|t }}
+          </p>
+        </details>
+      {% else %}
+        {# Single-provider: just show which provider is active, no controls #}
+        <div class="airo-preview__model-single">
+          <span class="airo-preview__model-single-label">
+            {% if model_choices[0] is defined %}
+              {{ model_choices[0].label }}
+            {% else %}
+              {{ 'AI Assistant'|t }}
+            {% endif %}
+          </span>
+        </div>
+      {% endif %}
     </div>
   {% endif %}
 
-  {# Provider sub-tabs (only shown when multiple providers available) #}
-  {% if providers|length > 1 %}
-    <div class="airo-preview__providers" role="tablist" aria-label="{{ 'AI Providers'|t }}">
-      {% for provider in providers %}
-        <button
-          type="button"
-          class="airo-preview__provider-tab{{ provider.id == active_provider ? ' airo-preview__provider-tab--active' : '' }}"
-          role="tab"
-          aria-selected="{{ provider.id == active_provider ? 'true' : 'false' }}"
-          data-provider-id="{{ provider.id }}"
-          data-provider-model="{{ provider.model }}">
-          {{ provider.label }}
-        </button>
-      {% endfor %}
-    </div>
-  {% endif %}
-
-  {# Response area — dynamically populated by JS #}
-  <div class="airo-preview__response" id="airo-preview-response-{{ node_id }}" role="tabpanel">
-
-    {# Default empty state #}
-    <div class="airo-preview__empty">
-      <div class="airo-preview__empty-icon" aria-hidden="true">
-        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="20" cy="20" r="19" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M13 20c0-3.866 3.134-7 7-7s7 3.134 7 7-3.134 7-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          <circle cx="20" cy="20" r="2" fill="currentColor"/>
-        </svg>
-      </div>
-      <p class="airo-preview__empty-text">
-        {{ 'Enter a question above to see how an AI system would answer based on this content.'|t }}
-      </p>
-    </div>
-
+  {# ── Results area — populated by JS after the query completes ────────── #}
+  <div class="airo-preview__results" id="airo-preview-results-{{ node_id }}">
   </div>
 
 </div>

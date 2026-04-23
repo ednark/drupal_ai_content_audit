@@ -1,4 +1,9 @@
-/* AI Assessment Panel — component styles */
+/**
+ * AI Assessment Panel — legacy component styles (theme-agnostic).
+ *
+ * All values resolve through --airo-* design tokens (ai-design-tokens.css).
+ * No --gin-* references here.
+ */
 
 .ai-assessment-panel {
   font-size: 0.9em;
@@ -11,9 +16,10 @@
   font-size: 1.8em;
   font-weight: bold;
   padding: 0.2em 0.5em;
-  border-radius: 4px;
+  border-radius: var(--airo-radius-xs, 4px);
   margin-bottom: 0.75em;
-  color: #fff;
+  /* Always light text on the coloured backgrounds below */
+  color: var(--airo-on-primary, #fff);
 }
 
 .ai-score-badge__denom {
@@ -21,10 +27,10 @@
   font-weight: normal;
 }
 
-.ai-score--green  { background-color: #2e7d32; }
-.ai-score--yellow { background-color: #f57f17; color: #333; }
-.ai-score--red    { background-color: #c62828; }
-.ai-score--none   { background-color: #616161; }
+.ai-score--green  { background-color: var(--airo-success, #058260); }
+.ai-score--yellow { background-color: var(--airo-score-warning, #d8b234); color: var(--airo-text, #222330); }
+.ai-score--red    { background-color: var(--airo-score-danger, #cc3d3d); }
+.ai-score--none   { background-color: var(--airo-text-light, #545560); }
 
 /* Suggestions list */
 .ai-suggestions {
@@ -35,7 +41,7 @@
 
 .ai-suggestions__item {
   padding: 0.3em 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--airo-border, #d4d4d8);
 }
 
 .ai-priority {
@@ -43,9 +49,9 @@
   opacity: 0.7;
 }
 
-.ai-priority--high   { color: #c62828; }
-.ai-priority--medium { color: #f57f17; }
-.ai-priority--low    { color: #2e7d32; }
+.ai-priority--high   { color: var(--airo-score-danger, #cc3d3d); }
+.ai-priority--medium { color: var(--airo-score-warning, #d8b234); }
+.ai-priority--low    { color: var(--airo-success, #058260); }
 
 /* Metadata definition list */
 .ai-metadata {
@@ -58,5 +64,5 @@
 
 .ai-metadata dt {
   font-weight: bold;
-  color: #555;
+  color: var(--airo-text-light, #545560);
 }

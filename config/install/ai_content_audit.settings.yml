@@ -4,3 +4,5 @@ enable_history: true
 node_types: []
 max_assessments_per_node: 10
 render_mode: text
+default_provider: ''
+default_model: ''

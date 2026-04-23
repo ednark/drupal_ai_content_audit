@@ -59,7 +59,7 @@ class SiteAnalysisService {
    *   quick_wins, infrastructure_recommendations, benchmark_comparison,
    *   projected_improvement.
    */
-  public function analyzeStatistics(array $statistics, array $technicalAudit, array $options = []): array {
+  public function analyzeStatistics(array $statistics, array $technicalAudit, array $filesystemAudit = [], array $options = []): array {
     $canRun = $this->canRunAnalysis();
     if (!$canRun['allowed']) {
       $this->logger->warning('AI analysis blocked: @reason', ['@reason' => $canRun['reason']]);
@@ -67,24 +67,21 @@ class SiteAnalysisService {
     }
 
     $systemMessage = $this->buildSystemMessage();
-    $userMessage = $this->buildUserMessage($statistics, $technicalAudit);
+    $userMessage = $this->buildUserMessage($statistics, $technicalAudit, $filesystemAudit);
 
     try {
-      // Resolve provider and model.
-      $config = $this->configFactory->get('ai_content_audit.settings');
-      $providerId = $options['provider_id'] ?? $config->get('provider_id') ?? NULL;
-      $modelId = $options['model_id'] ?? $config->get('model_id') ?? NULL;
+      // Resolve provider and model — same priority order as AiAssessmentService:
+      // 1. Runtime $options override
+      // 2. Centrally configured 'content_audit' default in ai.settings
+      // 3. Centrally configured generic 'chat' default in ai.settings
+      $central = $this->aiProvider->getDefaultProviderForOperationType('content_audit')
+        ?? $this->aiProvider->getDefaultProviderForOperationType('chat');
+
+      $providerId = $options['provider_id'] ?? $central['provider_id'] ?? NULL;
+      $modelId    = $options['model_id']    ?? $central['model_id']    ?? NULL;
 
       if (!$providerId || !$modelId) {
-        // Auto-select from available providers.
-        $providers = $this->aiProvider->getSimpleProviderModelOptions('chat');
-        if (empty($providers)) {
-          return ['error' => 'No AI chat providers configured.'];
-        }
-        $firstProvider = array_key_first($providers);
-        $providerId = $providerId ?: $firstProvider;
-        $models = $providers[$providerId] ?? [];
-        $modelId = $modelId ?: (is_array($models) ? array_key_first($models) : $models);
+        return ['error' => 'No AI chat provider configured. Please configure a default chat provider at /admin/config/ai/providers.'];
       }
 
       $input = new ChatInput([
@@ -92,7 +89,11 @@ class SiteAnalysisService {
         new ChatMessage('user', $userMessage),
       ]);
 
-      $response = $this->aiProvider->chat($input, $providerId, ['model_id' => $modelId]);
+      $siteAuditConfig = $this->configFactory->get('ai_site_audit.settings');
+      $maxTokens = (int) ($siteAuditConfig->get('max_tokens_per_analysis') ?: 100000);
+
+      $proxy = $this->aiProvider->createInstance($providerId);
+      $response = $proxy->chat($input, $modelId, ['ai_site_audit', 'analyze']);
       $rawOutput = $response->getNormalized()->getText();
 
       $parsed = $this->parseJsonResponse($rawOutput);
@@ -105,6 +106,10 @@ class SiteAnalysisService {
       $parsed['analyzed_at'] = time();
       $parsed['provider_id'] = $providerId;
       $parsed['model_id'] = $modelId;
+
+      // Increment daily AI call counter.
+      $callsToday = (int) $this->state->get('ai_site_audit.ai_calls_today', 0);
+      $this->state->set('ai_site_audit.ai_calls_today', $callsToday + 1);
 
       // Cache the interpretation.
       $this->cacheInterpretation($parsed);
@@ -130,7 +135,7 @@ class SiteAnalysisService {
    */
   public function canRunAnalysis(): array {
     $config = $this->configFactory->get('ai_site_audit.settings');
-    $cooldownHours = (int) ($config->get('analysis_cooldown_hours') ?: 24);
+    $cooldownHours = (int) ($config->get('analysis_cooldown_hours') ?? 24);
     $lastAnalysis = (int) $this->state->get('ai_site_audit.last_ai_analysis_time', 0);
 
     if ($lastAnalysis > 0 && (time() - $lastAnalysis) < ($cooldownHours * 3600)) {
@@ -139,6 +144,28 @@ class SiteAnalysisService {
         'allowed' => FALSE,
         'reason' => 'Cooldown period active. Next analysis allowed at ' . date('Y-m-d H:i:s', $nextAllowed),
         'next_allowed_at' => $nextAllowed,
+      ];
+    }
+
+    // Check daily AI call budget.
+    $maxCalls = (int) ($config->get('max_ai_calls_per_analysis') ?: 20);
+    $callsToday = (int) $this->state->get('ai_site_audit.ai_calls_today', 0);
+    $callsDate = $this->state->get('ai_site_audit.ai_calls_date', '');
+    $today = date('Ymd');
+
+    // Reset counter if it's a new day.
+    if ($callsDate !== $today) {
+      $callsToday = 0;
+      $this->state->set('ai_site_audit.ai_calls_date', $today);
+      $this->state->set('ai_site_audit.ai_calls_today', 0);
+    }
+
+    if ($callsToday >= $maxCalls) {
+      return [
+        'allowed' => FALSE,
+        'reason' => "Daily AI call budget exhausted ({$callsToday}/{$maxCalls}). Resets tomorrow.",
+        'calls_today' => $callsToday,
+        'max_calls' => $maxCalls,
       ];
     }
 
@@ -154,6 +181,30 @@ class SiteAnalysisService {
     }
 
     return ['allowed' => TRUE, 'reason' => 'Analysis can proceed.'];
+  }
+
+  /**
+   * Get the current budget status for display.
+   *
+   * @return array
+   *   Array with keys: calls_today, max_calls, tokens_budget, calls_remaining, budget_exhausted.
+   */
+  public function getBudgetStatus(): array {
+    $config = $this->configFactory->get('ai_site_audit.settings');
+    $maxCalls = (int) ($config->get('max_ai_calls_per_analysis') ?: 20);
+    $maxTokens = (int) ($config->get('max_tokens_per_analysis') ?: 100000);
+
+    $callsDate = $this->state->get('ai_site_audit.ai_calls_date', '');
+    $today = date('Ymd');
+    $callsToday = ($callsDate === $today) ? (int) $this->state->get('ai_site_audit.ai_calls_today', 0) : 0;
+
+    return [
+      'calls_today' => $callsToday,
+      'max_calls' => $maxCalls,
+      'tokens_budget' => $maxTokens,
+      'calls_remaining' => max(0, $maxCalls - $callsToday),
+      'budget_exhausted' => $callsToday >= $maxCalls,
+    ];
   }
 
   /**
@@ -225,7 +276,7 @@ PROMPT;
   /**
    * Build the user message with pre-computed statistics.
    */
-  protected function buildUserMessage(array $statistics, array $technicalAudit): string {
+  protected function buildUserMessage(array $statistics, array $technicalAudit, array $filesystemAudit = []): string {
     $parts = ["Here are the sitewide content audit statistics for analysis:\n"];
 
     // Overall stats.
@@ -286,6 +337,40 @@ PROMPT;
         elseif (is_object($result) && method_exists($result, 'toArray')) {
           $arr = $result->toArray();
           $parts[] = sprintf("- %s: %s — %s", $arr['label'] ?? $arr['check'] ?? 'unknown', $arr['status'] ?? 'unknown', $arr['description'] ?? '');
+        }
+      }
+    }
+
+    // Filesystem audit results.
+    if (!empty($filesystemAudit)) {
+      $parts[] = "\n## Filesystem Audit Results";
+      $fsPass = 0;
+      $fsFail = 0;
+      $fsWarning = 0;
+      $fsInfo = 0;
+      $fsCritical = [];
+      foreach ($filesystemAudit as $result) {
+        $status = is_array($result) ? ($result['status'] ?? 'unknown') : 'unknown';
+        $label = is_array($result) ? ($result['label'] ?? $result['check'] ?? 'unknown') : 'unknown';
+        match ($status) {
+          'pass' => $fsPass++,
+          'fail' => $fsFail++,
+          'warning' => $fsWarning++,
+          'info' => $fsInfo++,
+          default => NULL,
+        };
+        if ($status === 'fail') {
+          $fsCritical[] = $label;
+        }
+      }
+      $parts[] = sprintf("- Security/health checks: %d pass / %d fail / %d warning / %d info", $fsPass, $fsFail, $fsWarning, $fsInfo);
+      if (!empty($fsCritical)) {
+        $parts[] = "- Critical filesystem issues: " . implode(', ', array_slice($fsCritical, 0, 10));
+      }
+      // List individual filesystem audit results.
+      foreach ($filesystemAudit as $result) {
+        if (is_array($result)) {
+          $parts[] = sprintf("- %s: %s — %s", $result['label'] ?? $result['check'] ?? 'unknown', $result['status'] ?? 'unknown', $result['description'] ?? '');
         }
       }
     }

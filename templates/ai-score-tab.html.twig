@@ -18,6 +18,11 @@
  * - history: Array of history entries with keys: date, date_short, score, bar_height.
  * - node_id: The node ID.
  * - assess_url: URL for the re-analyze endpoint.
+ * - readability_grade: Integer grade level from result_json, or NULL.
+ * - tone: Tone string from result_json, or NULL.
+ * - days_since_modified: Integer days since node was last changed, or NULL.
+ * - is_stale: Boolean — true if days_since_modified > 90.
+ * - h2_section_count: Integer H2 section count from result_json, or NULL.
  */
 #}
 <div class="airo-score" data-node-id="{{ node_id }}">
@@ -83,6 +88,36 @@
       </div>
     </div>
 
+    {# Metadata row: readability grade, tone, freshness, H2 count #}
+    {% if readability_grade is not null or tone or days_since_modified is not null or h2_section_count is not null %}
+    <div class="airo-score__meta-row">
+      {% if readability_grade is not null %}
+        <span class="airo-score__meta-item airo-score__meta-item--grade">
+          {{ 'Grade %n'|t({'%n': readability_grade}) }}
+        </span>
+      {% endif %}
+      {% if tone %}
+        <span class="airo-score__meta-item airo-score__meta-item--tone">
+          {{ 'Tone: %tone'|t({'%tone': tone|capitalize}) }}
+        </span>
+      {% endif %}
+      {% if days_since_modified is not null %}
+        <span class="airo-score__meta-item airo-score__meta-item--freshness{% if is_stale %} airo-score__meta-item--stale{% endif %}">
+          {% if days_since_modified == 0 %}
+            {{ 'Last updated today'|t }}
+          {% else %}
+            {{ 'Last updated %n days ago'|t({'%n': days_since_modified}) }}
+          {% endif %}
+        </span>
+      {% endif %}
+      {% if h2_section_count is not null %}
+        <span class="airo-score__meta-item airo-score__meta-item--h2">
+          {{ '%n H2 sections'|t({'%n': h2_section_count}) }}
+        </span>
+      {% endif %}
+    </div>
+    {% endif %}
+
     {# Section 2: Sub-score breakdown #}
     {% if sub_scores is not empty %}
     <div class="airo-score__breakdown">
@@ -102,39 +137,111 @@
     </div>
     {% endif %}
 
-    {# Section 3: Checkpoints by category #}
-    {% if checkpoints_by_category is not empty %}
+    {# ─────────────────────────────────────────────────────────────────────────
+       Section 3: Checkpoints grouped by category, sorted fail → warning → pass
+       ─────────────────────────────────────────────────────────────────────────
+       Each category is rendered as a native <details>/<summary> accordion so
+       that reviewers can collapse passing groups and focus on failures.
+       Groups that contain at least one failure are expanded by default.
+
+       Sorting strategy (no Twig sort-by-key needed):
+         Pass 1 — render every item whose status is 'fail'.
+         Pass 2 — render every item whose status is 'warning'.
+         Pass 3 — render every item whose status is neither (i.e. 'pass').
+       #}
+    {% if checkpoints_by_category %}
     <div class="airo-score__checkpoints">
-      <h3 class="airo-score__section-title">{{ 'Checkpoints'|t }}</h3>
-      {% for category, items in checkpoints_by_category %}
-        <div class="airo-score__checkpoint-group">
-          <p class="airo-score__checkpoint-category">{{ category }}</p>
-          <table class="airo-score__checkpoint-table">
-            <tbody>
-              {% for cp in items %}
-                <tr class="airo-score__checkpoint-row">
-                  <td class="airo-score__checkpoint-icon">
-                    <span class="airo-score__icon airo-score__icon--{{ cp.status|default('warning') }}">
-                      {% if cp.status == 'pass' %}✓
-                      {% elseif cp.status == 'fail' %}✗
-                      {% else %}!{% endif %}
-                    </span>
-                  </td>
-                  <td class="airo-score__checkpoint-item">{{ cp.label }}</td>
-                  <td class="airo-score__checkpoint-priority">
-                    {% if cp.priority is defined %}
-                      <span class="airo-score__priority-badge airo-score__priority-badge--{{ cp.priority }}">
-                        {{ cp.priority }}
-                      </span>
-                    {% endif %}
-                  </td>
-                </tr>
+      <h4 class="airo-score__section-title">{{ 'Checkpoints'|t }}</h4>
+
+      <div class="airo-score__checkpoint-groups">
+        {% for category, cat_checks in checkpoints_by_category %}
+
+          {# Separate checks by status so we can show counts and sort them. #}
+          {% set fail_checks = cat_checks|filter(cp => cp.status == 'fail') %}
+          {% set warn_checks = cat_checks|filter(cp => cp.status == 'warning') %}
+          {% set pass_checks = cat_checks|filter(cp => cp.status not in ['fail', 'warning']) %}
+
+          {# Determine the worst status for the group-level badge. #}
+          {% if fail_checks|length > 0 %}
+            {% set cat_status = 'fail' %}
+          {% elseif warn_checks|length > 0 %}
+            {% set cat_status = 'warning' %}
+          {% else %}
+            {% set cat_status = 'pass' %}
+          {% endif %}
+
+          {# Build a human-readable count summary, e.g. "1 fail · 1 warn · 2 pass". #}
+          {% set count_parts = [] %}
+          {% if fail_checks|length > 0 %}
+            {% set count_parts = count_parts|merge([fail_checks|length ~ ' ' ~ 'fail'|t]) %}
+          {% endif %}
+          {% if warn_checks|length > 0 %}
+            {% set count_parts = count_parts|merge([warn_checks|length ~ ' ' ~ 'warn'|t]) %}
+          {% endif %}
+          {% if pass_checks|length > 0 %}
+            {% set count_parts = count_parts|merge([pass_checks|length ~ ' ' ~ 'pass'|t]) %}
+          {% endif %}
+
+          {# Groups with failures are open by default for immediate visibility. #}
+          <details
+            class="airo-score__checkpoint-group airo-score__checkpoint-group--{{ cat_status }}"
+            {% if cat_status == 'fail' %}open{% endif %}>
+
+            <summary class="airo-score__checkpoint-group-summary">
+              <span class="airo-score__checkpoint-group-label">{{ category }}</span>
+              <span class="airo-score__checkpoint-group-counts">
+                {{ count_parts|join(' · ') }}
+              </span>
+              <span class="airo-score__checkpoint-group-badge airo-score__checkpoint-group-badge--{{ cat_status }}"
+                aria-label="{{ cat_status }}">
+                {% if cat_status == 'pass' %}✓
+                {% elseif cat_status == 'fail' %}✗
+                {% else %}⚠{% endif %}
+              </span>
+              <span class="airo-score__checkpoint-chevron" aria-hidden="true">▾</span>
+            </summary>
+
+            <div class="airo-score__checkpoint-group-items">
+
+              {# Pass 1: failures (highest urgency) #}
+              {% for cp in fail_checks %}
+                <div class="airo-score__checkpoint-item airo-score__checkpoint-item--fail">
+                  <span class="airo-score__status-icon airo-score__status-icon--fail" aria-label="{{ 'Fail'|t }}">✗</span>
+                  <span class="airo-score__checkpoint-item-label">{{ cp.item }}</span>
+                  {% if cp.priority == 'high' %}
+                    <span class="airo-score__priority-badge">{{ 'high'|t }}</span>
+                  {% endif %}
+                </div>
               {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% endfor %}
-    </div>
+
+              {# Pass 2: warnings #}
+              {% for cp in warn_checks %}
+                <div class="airo-score__checkpoint-item airo-score__checkpoint-item--warning">
+                  <span class="airo-score__status-icon airo-score__status-icon--warn" aria-label="{{ 'Warning'|t }}">⚠</span>
+                  <span class="airo-score__checkpoint-item-label">{{ cp.item }}</span>
+                  {% if cp.priority == 'high' %}
+                    <span class="airo-score__priority-badge">{{ 'high'|t }}</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+
+              {# Pass 3: passing checks #}
+              {% for cp in pass_checks %}
+                <div class="airo-score__checkpoint-item airo-score__checkpoint-item--pass">
+                  <span class="airo-score__status-icon airo-score__status-icon--pass" aria-label="{{ 'Pass'|t }}">✓</span>
+                  <span class="airo-score__checkpoint-item-label">{{ cp.item }}</span>
+                  {% if cp.priority == 'high' %}
+                    <span class="airo-score__priority-badge">{{ 'high'|t }}</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+
+            </div>{# /.airo-score__checkpoint-group-items #}
+          </details>
+
+        {% endfor %}
+      </div>{# /.airo-score__checkpoint-groups #}
+    </div>{# /.airo-score__checkpoints #}
     {% endif %}
 
     {# Section 4: Score history chart #}

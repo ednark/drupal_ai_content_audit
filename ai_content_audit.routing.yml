@@ -74,49 +74,18 @@ ai_content_audit.panel.status:
       node:
         type: entity:node
 
-ai_content_audit.panel.score_tab:
-  path: '/admin/ai-content-audit/panel/{node}/score-tab'
-  defaults:
-    _controller: '\Drupal\ai_content_audit\Controller\AiroPanelController::scoreTab'
-  requirements:
-    _permission: 'view ai content assessment+administer ai content audit'
-    node: \d+
-  options:
-    _admin_route: TRUE
-    parameters:
-      node:
-        type: entity:node
+# Note: the four per-tab AJAX routes (score-tab, action-items-tab,
+# technical-audit-tab, preview-tab) have been removed. All tab panes are
+# rendered server-side at panel-open time; tab switching is pure JS show/hide.
 
-ai_content_audit.panel.actions_tab:
-  path: '/admin/ai-content-audit/panel/{node}/action-items-tab'
+# G5: Widget refresh — returns an AjaxResponse with ReplaceCommand so the
+# inline score widget can be swapped without a full page reload.
+ai_content_audit.widget.refresh:
+  path: '/admin/ai-content-audit/widget/{node}/refresh'
   defaults:
-    _controller: '\Drupal\ai_content_audit\Controller\AiroPanelController::actionItemsTab'
-  requirements:
-    _permission: 'view ai content assessment+administer ai content audit'
-    node: \d+
-  options:
-    _admin_route: TRUE
-    parameters:
-      node:
-        type: entity:node
-
-ai_content_audit.panel.audit_tab:
-  path: '/admin/ai-content-audit/panel/{node}/technical-audit-tab'
-  defaults:
-    _controller: '\Drupal\ai_content_audit\Controller\AiroPanelController::technicalAuditTab'
-  requirements:
-    _permission: 'view ai content assessment+administer ai content audit'
-    node: \d+
-  options:
-    _admin_route: TRUE
-    parameters:
-      node:
-        type: entity:node
-
-ai_content_audit.panel.preview_tab:
-  path: '/admin/ai-content-audit/panel/{node}/preview-tab'
-  defaults:
-    _controller: '\Drupal\ai_content_audit\Controller\AiroPanelController::aiPreviewTab'
+    _controller: '\Drupal\ai_content_audit\Controller\AiroPanelController::refreshWidget'
+    _title: 'Widget Refresh'
+    _format: 'json'
   requirements:
     _permission: 'view ai content assessment+administer ai content audit'
     node: \d+
@@ -165,6 +134,36 @@ ai_content_audit.panel.preview_query:
     parameters:
       node:
         type: entity:node
+
+# Full assessment report page — formatted view for a single AiContentAssessment entity.
+ai_content_audit.assessment.report:
+  path: '/admin/ai-content-audit/assessment/{ai_content_assessment}'
+  defaults:
+    _controller: '\Drupal\ai_content_audit\Controller\AiAssessmentController::report'
+    _title_callback: '\Drupal\ai_content_audit\Controller\AiAssessmentController::reportTitle'
+  requirements:
+    _entity_access: 'ai_content_assessment.view'
+    ai_content_assessment: \d+
+  options:
+    _admin_route: TRUE
+    parameters:
+      ai_content_assessment:
+        type: entity:ai_content_assessment
+
+# GET endpoint: returns all configured provider+model choices as JSON.
+# Used as a Phase-2 stub for lazy-loading the model selector; not called
+# from the UI in Phase 1 (the list is embedded server-side at panel-open time).
+ai_content_audit.panel.available_models:
+  path: '/admin/ai-content-audit/api/available-models'
+  defaults:
+    _controller: '\Drupal\ai_content_audit\Controller\AiroPanelController::listAvailableModels'
+    _title: 'Available AI Models'
+    _format: 'json'
+  requirements:
+    _permission: 'use any ai provider in airo+administer ai content audit'
+  methods: [GET]
+  options:
+    _admin_route: TRUE
 
 # Settings form.
 ai_content_audit.settings:

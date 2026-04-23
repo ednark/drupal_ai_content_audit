@@ -34,12 +34,19 @@
     </button>
   </div>
 
+  {#
+    Priority group headings use module-owned .airo-badge chips styled via
+    ai-action-items-tab.css → --airo-status-* tokens. No .gin-status dependency.
+      high   → airo-badge--danger  (red)
+      medium → airo-badge--warning (yellow)
+      low    → airo-badge--success (green)
+  #}
+
   {# High Priority Group #}
   {% if high_items is not empty %}
   <div class="airo-actions__group airo-actions__group--high">
     <h3 class="airo-actions__group-title">
-      <span class="airo-actions__priority-dot airo-actions__priority-dot--high"></span>
-      {{ 'High Priority'|t }}
+      <span class="airo-badge airo-badge--danger">{{ 'High Priority'|t }}</span>
       <span class="airo-actions__group-count">({{ high_items|length }})</span>
     </h3>
     {% for item in high_items %}
@@ -52,8 +59,7 @@
   {% if medium_items is not empty %}
   <div class="airo-actions__group airo-actions__group--medium">
     <h3 class="airo-actions__group-title">
-      <span class="airo-actions__priority-dot airo-actions__priority-dot--medium"></span>
-      {{ 'Medium Priority'|t }}
+      <span class="airo-badge airo-badge--warning">{{ 'Medium Priority'|t }}</span>
       <span class="airo-actions__group-count">({{ medium_items|length }})</span>
     </h3>
     {% for item in medium_items %}
@@ -66,8 +72,7 @@
   {% if low_items is not empty %}
   <div class="airo-actions__group airo-actions__group--low">
     <h3 class="airo-actions__group-title">
-      <span class="airo-actions__priority-dot airo-actions__priority-dot--low"></span>
-      {{ 'Low Priority'|t }}
+      <span class="airo-badge airo-badge--success">{{ 'Low Priority'|t }}</span>
       <span class="airo-actions__group-count">({{ low_items|length }})</span>
     </h3>
     {% for item in low_items %}

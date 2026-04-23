@@ -8,3 +8,9 @@ ai_site_audit.settings_tab:
   route_name: ai_site_audit.settings
   base_route: ai_site_audit.dashboard
   weight: 10
+
+ai_site_audit.content_type_comparison:
+  route_name: ai_site_audit.content_type_comparison
+  title: 'Content Types'
+  base_route: ai_site_audit.dashboard
+  weight: 10

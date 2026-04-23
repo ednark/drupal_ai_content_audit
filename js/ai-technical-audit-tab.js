@@ -46,7 +46,7 @@
           btn.textContent = Drupal.t('Checking...');
 
           // Reload the technical audit tab via the tab click handler
-          var tabBtn = document.querySelector('.airo-panel__tab[data-tab="technical-audit-tab"]');
+          var tabBtn = document.querySelector('.tabs__link[data-airo-tab="technical-audit-tab"]');
           if (tabBtn) {
             // Add force_refresh parameter by modifying the URL temporarily
             var panel = document.querySelector('.airo-panel');

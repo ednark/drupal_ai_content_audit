@@ -42,11 +42,4 @@
   </div>
   {% endif %}
 
-  {% if item.field_target and item.field_target != 'null' %}
-  <div class="airo-actions__item-footer">
-    <a href="{{ path('entity.node.edit_form', {node: node_id}) }}" class="airo-actions__admin-link">
-      {{ 'Edit in form'|t }} →
-    </a>
-  </div>
-  {% endif %}
 </div>
